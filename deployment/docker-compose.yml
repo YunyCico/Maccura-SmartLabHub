@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: department-platform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: department_platform
+      POSTGRES_USER: platform_user
+      POSTGRES_PASSWORD: platform_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - department_platform_pgdata:/var/lib/postgresql/data
+
+volumes:
+  department_platform_pgdata:
