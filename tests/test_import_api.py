@@ -1,4 +1,5 @@
 from io import BytesIO
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
@@ -28,3 +29,14 @@ def test_import_preview_does_not_write_file() -> None:
     assert body["status"] == "preview_ready"
     assert body["data"]["total_rows"] == 1
     assert body["data"]["sheets"][0]["detected_fields"]["module"] == "模块"
+
+
+def test_dashboard_summary_recovers_after_database_file_is_removed() -> None:
+    database_path = Path(__file__).resolve().parents[1] / "backend" / "department_platform.db"
+    database_path.unlink(missing_ok=True)
+
+    client = TestClient(app)
+    response = client.get("/api/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json()["recent_tasks"] == []
