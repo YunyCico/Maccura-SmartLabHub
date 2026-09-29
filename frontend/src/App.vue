@@ -18,10 +18,36 @@ const summary = ref<DashboardSummary>({
 
 const navigation = [
   { label: '工作台', code: '01' },
-  { label: '数据导入', code: '02' },
-  { label: '服务需求', code: '03' },
-  { label: '分析看板', code: '04' },
-  { label: '文件导出', code: '05' },
+  { label: '数据分析', code: '02' },
+  { label: '钉钉听记内容标准化处理', code: '03' },
+  { label: '6S标准化报告', code: '04' },
+]
+
+const workspaceModules = [
+  {
+    code: '01',
+    label: '数据分析',
+    section: '数据分析',
+    description: '承接 SmartLabHub 的 Excel 导入、多层表头识别、字段映射、汇总和分析能力。',
+    status: '可用',
+    action: '进入数据分析',
+  },
+  {
+    code: '02',
+    label: '钉钉听记内容标准化处理',
+    section: '钉钉听记内容标准化处理',
+    description: '预留钉钉听记文本清洗、要点抽取、标准字段整理和报告输出能力。',
+    status: '规划中',
+    action: '查看模块',
+  },
+  {
+    code: '03',
+    label: '6S标准化报告',
+    section: '6S标准化报告',
+    description: '预留 6S 检查记录、问题归集、整改跟踪和标准化报告生成能力。',
+    status: '规划中',
+    action: '查看模块',
+  },
 ]
 
 async function loadWorkspace() {
@@ -134,6 +160,34 @@ onMounted(loadWorkspace)
           </article>
         </div>
 
+        <section class="module-panel panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">WORKSPACE MODULES</p>
+              <h3>部门工作模块</h3>
+            </div>
+            <span class="module-count">3 个模块</span>
+          </div>
+          <div class="module-grid">
+            <button
+              v-for="module in workspaceModules"
+              :key="module.code"
+              class="module-card"
+              :class="{ planned: module.status === '规划中' }"
+              type="button"
+              @click="activeSection = module.section"
+            >
+              <span class="module-code">{{ module.code }}</span>
+              <strong>{{ module.label }}</strong>
+              <p>{{ module.description }}</p>
+              <span class="module-footer">
+                <span class="module-status" :class="{ ready: module.status === '可用' }">{{ module.status }}</span>
+                <span class="module-action">{{ module.action }} ↗</span>
+              </span>
+            </button>
+          </div>
+        </section>
+
         <div class="lower-grid">
           <section class="panel task-panel">
             <div class="panel-heading">
@@ -141,13 +195,13 @@ onMounted(loadWorkspace)
                 <p class="section-kicker">PROCESS QUEUE</p>
                 <h3>最近处理任务</h3>
               </div>
-              <button class="text-button" type="button" @click="activeSection = '数据导入'">查看全部 <span>↗</span></button>
+              <button class="text-button" type="button" @click="activeSection = '数据分析'">查看全部 <span>↗</span></button>
             </div>
             <div v-if="summary.recent_tasks.length === 0" class="empty-state">
               <div class="empty-mark">—</div>
               <strong>还没有处理记录</strong>
               <p>上传第一份 Excel 后，处理批次会显示在这里。</p>
-              <button class="primary-button" type="button" @click="activeSection = '数据导入'">开始导入 <span>↗</span></button>
+              <button class="primary-button" type="button" @click="activeSection = '数据分析'">开始导入 <span>↗</span></button>
             </div>
             <div v-else class="task-list">
               <div v-for="task in summary.recent_tasks" :key="String(task.id)" class="task-row">
@@ -173,12 +227,14 @@ onMounted(loadWorkspace)
         </div>
       </section>
 
-      <ImportPreview v-if="activeSection === '数据导入'" />
+      <ImportPreview v-if="activeSection === '数据分析'" />
 
       <section v-else-if="activeSection !== '工作台'" class="placeholder-view">
         <span class="placeholder-code">MODULE / {{ navigation.find((item) => item.label === activeSection)?.code }}</span>
-        <h2>{{ activeSection }}模块正在搭建</h2>
-        <p>当前已完成平台壳层、后端接口和本地用户模拟。下一步将接入该模块的业务流程。</p>
+        <h2>{{ activeSection }}</h2>
+        <p v-if="activeSection === '钉钉听记内容标准化处理'">该模块用于处理钉钉听记文本：清洗口语内容、抽取关键事项、统一人员/时间/问题/结论字段，并生成可归档的标准化记录。当前功能尚未开发完成，先保留入口。</p>
+        <p v-else-if="activeSection === '6S标准化报告'">该模块用于整理 6S 检查记录、问题分类、整改跟踪和现场照片说明，并生成标准化报告。当前功能尚未开发完成，先保留入口。</p>
+        <p v-else>当前已完成平台壳层、后端接口和本地用户模拟。下一步将接入该模块的业务流程。</p>
         <button class="primary-button" type="button" @click="activeSection = '工作台'">返回工作台 <span>↗</span></button>
       </section>
     </main>
