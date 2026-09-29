@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>使用说明 · 智慧实验室运营管理-数据汇总助手</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* ---- 使用说明页专用（独立于主界面） ---- */
+body{background:var(--bg)}
+.hwrap{display:flex;gap:22px;max-width:1500px;margin:0 auto;padding:22px 26px 70px;align-items:flex-start}
+.hnav{flex:0 0 252px;position:sticky;top:22px;max-height:calc(100vh - 44px);overflow:auto;
+  background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 12px;
+  box-shadow:var(--sh1)}
+.hnav .hbrand{display:flex;align-items:center;gap:9px;padding:0 4px 11px;margin-bottom:9px;
+  border-bottom:1px solid var(--line)}
+.hnav .hbrand img{width:104px;height:auto}
+.hnav .hbrand span{font-size:11px;color:var(--ink3)}
+.hnav .hback{display:block;text-align:center;margin:12px 4px 0;padding:9px;
+  background:linear-gradient(180deg,#2470c4,var(--blue));color:#fff;border-radius:var(--radius-s);
+  text-decoration:none;font-size:13px;font-weight:600}
+.hnav .hback:hover{background:linear-gradient(180deg,var(--blue),var(--blue-d))}
+.hnav .hsearch{width:100%;margin-bottom:9px}
+.hnav .hcount{font-size:11px;color:var(--ink3);min-height:15px;margin:-4px 2px 6px}
+.hnav a.hl2{display:block;font-size:12.5px;font-weight:700;color:var(--blue);padding:7px 9px;
+  border-radius:7px;text-decoration:none;margin-top:3px}
+.hnav a.hl2:hover{background:var(--blue-l2)}
+.hnav a.hl3{display:block;font-size:12px;color:var(--ink2);padding:5px 9px 5px 20px;
+  border-radius:7px;text-decoration:none;line-height:1.5}
+.hnav a.hl3:hover{background:var(--blue-l2);color:var(--blue)}
+.hnav a.hid{display:none!important}
+.hmain{flex:1;min-width:0;background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px 32px 44px;box-shadow:var(--sh1)}
+.hmain h1{font-size:22px;font-weight:800;color:var(--ink);margin:0 0 6px;padding-bottom:12px;
+  position:relative}
+.hmain h1::before{content:"";position:absolute;left:0;bottom:0;width:46px;height:3px;
+  border-radius:2px;background:linear-gradient(90deg,var(--blue),var(--brand))}
+.hmain h1::after{content:"";position:absolute;left:60px;bottom:1px;right:0;height:1px;
+  background:linear-gradient(90deg,var(--line),transparent)}
+.hmain h2{font-size:17px;font-weight:700;color:var(--blue);margin:34px 0 13px;padding-top:14px;
+  border-top:1px dashed var(--line);display:flex;align-items:center;gap:9px}
+.hmain h2::before{content:"";width:4px;height:17px;border-radius:2px;
+  background:linear-gradient(180deg,var(--blue),var(--brand))}
+.hmain h2:first-of-type{border-top:0;padding-top:0;margin-top:22px}
+.hmain h3{font-size:14.5px;font-weight:700;color:var(--ink);margin:22px 0 10px}
+.hmain h4{font-size:13.5px;font-weight:700;color:var(--ink2);margin:16px 0 8px}
+.hmain p{margin:9px 0;font-size:13.5px;line-height:1.9;color:var(--ink2)}
+.hmain ul,.hmain ol{margin:9px 0;padding-left:24px;font-size:13.5px;line-height:1.95;color:var(--ink2)}
+.hmain li{margin-bottom:3px}
+.hmain strong{color:var(--ink);font-weight:700}
+.hmain a{color:var(--blue);text-decoration:none;border-bottom:1px solid #cfe0f3}
+.hmain a:hover{border-bottom-color:var(--blue)}
+.hmain code{background:var(--blue-l);color:var(--blue-d);padding:1.5px 6px;border-radius:5px;
+  font-size:12px;font-family:Consolas,Monaco,monospace;border:1px solid #d8e6f7}
+.hmain kbd{display:inline-block;background:#eef3f9;border:1px solid #cddced;border-bottom-width:2px;
+  border-radius:5px;padding:0 6px;font-size:11px;font-family:inherit;color:var(--blue-d);
+  line-height:17px;font-weight:600}
+.hmain pre.code{background:#0f2236;color:#c8e1ff;border-radius:var(--radius-s);padding:13px 15px;
+  overflow:auto;font-size:12px;line-height:1.75;font-family:Consolas,Menlo,monospace}
+.hmain pre.code code{background:none;border:0;color:inherit;padding:0;font-size:12px}
+.hmain hr{border:0;border-top:1px dashed var(--line);margin:24px 0}
+.hmain blockquote.doc{margin:14px 0;padding:14px 18px;background:linear-gradient(170deg,#fff8ec,#fffdf8);
+  border-left:3px solid var(--orange);border-radius:var(--radius-s);color:#7a5200}
+.hmain blockquote.doc p{color:#7a5200;margin:6px 0;font-size:13px}
+.hmain blockquote.doc ul{color:#7a5200;font-size:13px;margin:6px 0}
+.hmain blockquote.doc strong{color:#6b4700}
+.hmain blockquote.doc table.doc td{color:#7a5200;border-color:#f0e0c0}
+.hmain blockquote.doc table.doc tr:nth-child(even) td{background:#fffaf0}
+/* 块引用里的小标题（md 的 "> ## xxx"） */
+.hmain blockquote.doc h2.bqh,.hmain blockquote.doc h3.bqh,.hmain blockquote.doc h4.bqh{
+  font-size:14px;font-weight:800;color:#a8560a;margin:2px 0 8px;padding:0;border:0;
+  display:flex;align-items:center;gap:7px;line-height:1.5}
+.hmain blockquote.doc h2.bqh::before,.hmain blockquote.doc h3.bqh::before,
+.hmain blockquote.doc h4.bqh::before{content:"";width:3px;height:14px;border-radius:2px;
+  background:var(--orange);flex:0 0 auto}
+.tw{margin:12px 0;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-s)}
+.hmain table.doc{border-collapse:collapse;width:100%;font-size:12.5px;margin:0}
+.hmain table.doc th{background:linear-gradient(180deg,#f2f7fd,#e9f1fa);color:var(--blue-d);
+  font-weight:700;text-align:left;padding:9px 12px;border-bottom:1px solid #d5e3f2;white-space:nowrap}
+.hmain table.doc td{padding:8px 12px;border-bottom:1px solid var(--line2);color:var(--ink2);
+  vertical-align:top;line-height:1.75}
+.hmain table.doc tr:nth-child(even) td{background:#fbfdff}
+.hmain table.doc tr:last-child td{border-bottom:0}
+.hmain :target{background:#fff8e1;transition:background .6s}
+.hmain .htop{position:fixed;right:26px;bottom:26px;width:42px;height:42px;border-radius:50%;
+  background:linear-gradient(180deg,#2470c4,var(--blue));color:#fff;border:0;cursor:pointer;
+  font-size:17px;box-shadow:0 6px 18px rgba(27,95,170,.34);display:none;z-index:50}
+.hmain .htop.show{display:block}
+@media(max-width:1100px){.hwrap{flex-direction:column}.hnav{position:relative;top:0;
+  max-height:none;width:100%;flex:0 0 auto}
+  .hnav a.hl3{display:none}
+  .hmain{padding:20px 18px 34px}}
+</style>
+</head>
+<body>
+<div class="hwrap">
+  <aside class="hnav">
+    <div class="hbrand">
+      <img src="logo-maccura.svg" alt="迈克生物 MACCURA">
+      <span>使用说明</span>
+    </div>
+    <input class="search hsearch" id="hsearch" placeholder="搜索说明内容…">
+    <div class="hcount" id="hcount"></div>
+    <div id="htoc">
+<a class="hl2" href="#一-怎么启动" data-t="一、怎么启动">一、怎么启动</a>
+<a class="hl2" href="#一点五-在程序里怎么打开这份说明" data-t="一点五、在程序里怎么打开这份说明">一点五、在程序里怎么打开这份说明</a>
+<a class="hl2" href="#二-工作区一览" data-t="二、工作区一览">二、工作区一览</a>
+<a class="hl2" href="#三-导入数据" data-t="三、导入数据">三、导入数据</a>
+<a class="hl3" href="#方式-1-拖进来" data-t="方式 1：拖进来">方式 1：拖进来</a>
+<a class="hl3" href="#方式-2-扫描文件夹" data-t="方式 2：扫描文件夹">方式 2：扫描文件夹</a>
+<a class="hl3" href="#方式-3-钉钉在线文档" data-t="方式 3：钉钉在线文档">方式 3：钉钉在线文档</a>
+<a class="hl3" href="#表头猜错了怎么办" data-t="表头猜错了怎么办？">表头猜错了怎么办？</a>
+<a class="hl3" href="#读取方式-列式表格-信息表" data-t="「读取方式」：列式表格 / 信息表">「读取方式」：列式表格 / 信息表</a>
+<a class="hl2" href="#三点二-查看原始数据" data-t="三点二、查看原始数据">三点二、查看原始数据</a>
+<a class="hl3" href="#在预览里直接改数据" data-t="在预览里直接改数据">在预览里直接改数据</a>
+<a class="hl3" href="#保存并替换原文件" data-t="保存并替换原文件">保存并替换原文件</a>
+<a class="hl3" href="#删掉整个子表" data-t="删掉整个子表">删掉整个子表</a>
+<a class="hl2" href="#三点三-删除不需要的导出文件" data-t="三点三、删除不需要的导出文件">三点三、删除不需要的导出文件</a>
+<a class="hl3" href="#几点说明" data-t="几点说明">几点说明</a>
+<a class="hl3" href="#和-清除结果-的区别" data-t="和「清除结果」的区别">和「清除结果」的区别</a>
+<a class="hl2" href="#三点五-钉钉在线文档" data-t="三点五、钉钉在线文档">三点五、钉钉在线文档</a>
+<a class="hl2" href="#三点六-字段字典-纵向-横向" data-t="三点六、字段字典（纵向 / 横向）">三点六、字段字典（纵向 / 横向）</a>
+<a class="hl2" href="#四-汇总数据-最常用" data-t="四、汇总数据（最常用）">四、汇总数据（最常用）</a>
+<a class="hl3" href="#①-选数据表" data-t="① 选数据表">① 选数据表</a>
+<a class="hl3" href="#②-选字段" data-t="② 选字段">② 选字段</a>
+<a class="hl3" href="#③-筛选条件-可选" data-t="③ 筛选条件（可选）">③ 筛选条件（可选）</a>
+<a class="hl3" href="#④-输出选项" data-t="④ 输出选项">④ 输出选项</a>
+<a class="hl3" href="#一键合并-从概览直接开工" data-t="一键合并（从概览直接开工）">一键合并（从概览直接开工）</a>
+<a class="hl3" href="#合并前先预览-一键合并旁边的-预览" data-t="合并前先预览（一键合并旁边的「预览」）">合并前先预览（一键合并旁边的「预览」）</a>
+<a class="hl3" href="#字段不一致的表怎么一起汇总" data-t="字段不一致的表怎么一起汇总？">字段不一致的表怎么一起汇总？</a>
+<a class="hl3" href="#生成-导出" data-t="生成 → 导出">生成 → 导出</a>
+<a class="hl3" href="#清除结果" data-t="清除结果">清除结果</a>
+<a class="hl3" href="#找不到刚才导出的文件" data-t="找不到刚才导出的文件？">找不到刚才导出的文件？</a>
+<a class="hl3" href="#结果会过期吗" data-t="结果会过期吗？">结果会过期吗？</a>
+<a class="hl3" href="#结果分析-数据概览-数据透视" data-t="结果分析（数据概览 + 数据透视）">结果分析（数据概览 + 数据透视）</a>
+<a class="hl3" href="#数据概览" data-t="数据概览">数据概览</a>
+<a class="hl3" href="#数据透视" data-t="数据透视">数据透视</a>
+<a class="hl3" href="#导出透视表" data-t="导出透视表">导出透视表</a>
+<a class="hl3" href="#分析报告" data-t="分析报告（v2.1.0 新增）">分析报告（v2.1.0 新增）</a>
+<a class="hl3" href="#两个模板" data-t="两个模板">两个模板</a>
+<a class="hl3" href="#多天数据怎么处理" data-t="多天数据怎么处理">多天数据怎么处理</a>
+<a class="hl3" href="#怎么生成" data-t="怎么生成">怎么生成</a>
+<a class="hl3" href="#参数怎么填" data-t="参数怎么填">参数怎么填</a>
+<a class="hl3" href="#设置里的报告相关" data-t="设置里的报告相关">设置里的报告相关</a>
+<a class="hl2" href="#五-横向关联-vlookup-效果" data-t="五、横向关联（VLOOKUP 效果）">五、横向关联（VLOOKUP 效果）</a>
+<a class="hl2" href="#六-ai-助手-可选" data-t="六、AI 助手（可选）">六、AI 助手（可选）</a>
+<a class="hl2" href="#七-删除与维护" data-t="七、删除与维护">七、删除与维护</a>
+<a class="hl3" href="#7-1-数据自检-原始文件丢了怎么办" data-t="7.1 数据自检（原始文件丢了怎么办）">7.1 数据自检（原始文件丢了怎么办）</a>
+<a class="hl2" href="#八-目录结构" data-t="八、目录结构">八、目录结构</a>
+<a class="hl2" href="#九-常见问题" data-t="九、常见问题">九、常见问题</a>
+    </div>
+    <a class="hback" href="./index.html">← 返回程序</a>
+  </aside>
+  <main class="hmain" id="hmain">
+<h1 id="智慧实验室运营管理-数据汇总助手-实验室运营管理部-使用说明">智慧实验室运营管理-数据汇总助手（实验室运营管理部） · 使用说明</h1>
+<blockquote class="doc"><h3 class="bqh">⚠ 内部资料，请勿外传</h3><p><strong>本程序及本说明仅限「迈克生物集团 · 实验室运营管理部」内部使用。</strong></p><ul><li>不得对外分发、转发、上传到公开渠道，不得用于部门职责以外的用途</li><li>程序里导入的数据属于公司内部经营数据，请勿截图、外发或拷贝到非公司设备</li><li>程序只监听本机（<code>127.0.0.1</code>），数据只保存在本机程序目录，不会自动上传</li><li>人员调岗或离职时，请按部门要求清理本机 <code>library</code> 目录下的数据</li></ul><p>部门：实验室运营管理部　|　程序名称：智慧实验室运营管理-数据汇总助手</p><p>当前版本：<strong>v2.4.0</strong>　|　界面配色与品牌标识：迈克生物</p><p>本版新增：<strong>分析报告支持多天数据</strong> —— 以前报告默认「数据就是一天」，如果你给的是<strong>好几天</strong>的数据，程序会把不同天的同一小时<strong>错误地加在一起</strong>（比如 09/19 和 09/20 的 9 点都算成「9:00–10:00」一个格子），算出来的峰值、集中度、实际速度<strong>全都是错的</strong>。现在程序会<strong>自动识别数据横跨几天</strong>，并把时段<strong>按天隔离</strong>：每天的同一小时是两个独立格子、不会相加；模板②的<strong>队列重建和饱和窗也改成每天各算一遍</strong>（队列是「当天从零起算」的积压量，跨天累加会把前一天的积压带进第二天，速度就算错了）。报告里会多一节「<strong>逐日对比</strong>」，把每天的完成量、峰值时段、实际速度并排列出来，并<strong>取速度最高的那天</strong>作为能力证据。单天数据的行为和以前<strong>完全一样</strong>。</p><p>上一版：<strong>「保存并替换原文件」</strong> —— 在「原始数据预览」里改完数据后，现在可以直接<strong>写回这份数据表本身</strong>（不用每次重新编辑一遍）。覆盖前会<strong>自动备份原文件</strong>到「<strong>导出结果\_原始文件备份\</strong>」；写回后工作表列表、列名、行数会<strong>自动重新识别</strong>；<strong>删掉的列不写回</strong>，<strong>删掉的子表从文件里真正消失</strong>。这一步必须你<strong>主动点</strong>才会执行 —— 编辑本身默认仍然只改内存。</p><p>上一版：<strong>在预览里直接改数据</strong> —— 能<strong>改单元格、删整行、删整列、删掉整个子表</strong>，带<strong>撤销/重做</strong>和<strong>改动标黄</strong>；改完可以「保存并替换原文件」写回，或「导出为新文件」另存一份到「<strong>导出结果</strong>」目录。</p><p>再上一版：<strong>一键出分析报告</strong> —— 汇总完不用自己想做图，选个模板就出一份<strong>独立 HTML 报告</strong>。先做两个模板：<strong>📊 设备模块负载与堵塞点</strong>（全天活儿什么时候涌来、哪个模块被压满、堵点在哪）和 <strong>🧭 免疫线实际测试速度·证据链</strong>（队列重建锁定饱和窗、算出模块真实速度、含均衡化模拟）。报告存进程序目录的「<strong>分析报告</strong>」文件夹，同名不覆盖，可直接打印成 PDF 或转发。</p><p>上一版：结果卡片下方「<strong>结果分析</strong>」，分「<strong>数据概览</strong>」（每列有没有缺失、是数字还是文本、都分布成什么样、极值是多少）和「<strong>数据透视</strong>」（行维度 × 列维度 × 六种聚合，做交叉表，可直接导出 Excel/CSV）。</p><p>更早：概览「表头结构分组」的每组多了「<strong>预览</strong>」按钮 ——</p><p>合并前先看一眼会合并成什么（多少行、哪些列、每张表各贡献多少行、数据长什么样）。</p><p>设置页「最近导出的文件」可删除（单条删 / 清空全部）；</p><p>数据源管理可<strong>直接查看原始数据表</strong>（按 Excel 原样显示、可切工作表、可翻页）；</p><p>「汇总提取 → ① 选择要汇总的数据表」加了「↻ 刷新」按钮，刚导入的表格</p><p>这里没出现时点一下即可；切到本页也会自动同步最新数据。</p><p>概览「数据自检」告警（原始文件缺失时会明确提示怎么修）；</p><p>程序内可直接查看本说明（三个入口）；</p><p>概览「一键合并」、结果「清除结果」按钮、全新界面视觉。</p></blockquote>
+<hr>
+<p>一个放在本机运行的小程序，用来把各个实验室、各种格式的表格收进来， 需要哪部分数据时勾一勾，自动汇总成一张标准表导出。</p>
+<hr>
+<h2 id="一-怎么启动">一、怎么启动</h2>
+<p>双击文件夹里的 <strong><code>start.bat</code></strong>。</p>
+<ul>
+<li>会弹出一个黑色命令行窗口（不要关它，关了程序就停了）</li>
+<li>大概 1 秒后浏览器自动打开操作界面</li>
+<li>如果浏览器没自动开，手动访问窗口里显示的地址，例如 <code>http://127.0.0.1:8765/</code></li>
+<li>界面「设置」页能看到当前<strong>程序版本</strong>，方便确认装的是不是最新版</li>
+</ul>
+<blockquote class="doc"><p>程序不联网也能用（除「AI 助手」和「钉钉在线文档」以外的功能都不联网）。</p><p>关掉那个黑色窗口 = 退出程序。</p></blockquote>
+<hr>
+<h2 id="一点五-在程序里怎么打开这份说明">一点五、在程序里怎么打开这份说明</h2>
+<p>不用去找磁盘上的 <code>使用说明.md</code> 文件 —— 程序里直接就能看，<strong>三个入口</strong>：</p>
+<div class="tw"><table class="doc"><thead><tr><th>入口</th><th>位置</th></tr></thead><tbody><tr><td>侧栏导航「<strong>使用说明</strong>」</td><td>左侧菜单最下面，点一下在新标签页打开</td></tr><tr><td>侧栏底部蓝色「<strong>❓ 使用说明</strong>」按钮</td><td>左下角、数据统计下方</td></tr><tr><td>概览页的介绍文字里</td><td>「…先看一下<strong>使用说明</strong>」这个链接</td></tr></tbody></table></div>
+<p>打开的说明页长这样：<strong>左边是目录</strong>（点标题直接跳过去），<strong>右边是正文</strong>，右上角能<strong>搜索</strong>（输入关键词会高亮匹配段落）。 页面顶部有「← 返回程序」按钮可以回到主界面。</p>
+<blockquote class="doc"><p>说明页和这份 <code>使用说明.md</code> 是<strong>同一份内容</strong>，改一处两边都会更新。</p></blockquote>
+<hr>
+<h2 id="二-工作区一览">二、工作区一览</h2>
+<div class="tw"><table class="doc"><thead><tr><th>菜单</th><th>干什么用</th></tr></thead><tbody><tr><td><strong>概览</strong></td><td>看总共导了多少张表、多少行、多少字段；还能看出哪些表的字段<strong>完全一致</strong>（这些可以一键合并）</td></tr><tr><td><strong>数据源管理</strong></td><td>导入 / 查看 / 删除数据表；修改「实验室」「表类型」标注；<strong>对接钉钉在线文档</strong></td></tr><tr><td><strong>字段字典</strong></td><td>列出所有<strong>表头</strong>字段，支持<strong>纵向列表</strong>和<strong>横向矩阵</strong>两种看法，可一键去做纵向汇总或横向关联</td></tr><tr><td><strong>汇总提取</strong></td><td><strong>核心功能</strong>：选表 → 选字段 → 生成汇总表 → 导出 Excel</td></tr><tr><td><strong>AI 助手</strong></td><td>用一句话描述需求，AI 自动帮你选表选字段并生成汇总</td></tr><tr><td><strong>设置</strong></td><td>维护实验室名称清单、常用表类型清单、AI 接口、最近导出的文件</td></tr></tbody></table></div>
+<hr>
+<h2 id="三-导入数据">三、导入数据</h2>
+<h3 id="方式-1-拖进来">方式 1：拖进来</h3>
+<p>把 Excel / CSV 直接拖到「数据源管理」页面的虚线框里。可以一次拖多个、也可以拖整个文件夹里的文件（多选）。</p>
+<h3 id="方式-2-扫描文件夹">方式 2：扫描文件夹</h3>
+<p>把文件夹路径粘贴到输入框，点「扫描文件夹」。程序会<strong>递归</strong>找里面所有 <code>.xlsx / .xlsm / .csv</code>。 例如：</p>
+<pre class="code"><code>C:\Users\98319\DingDrive (孟鹏杰)\迈克生物集团\我的文件\实验室运营管理部\智慧实验室项目统计</code></pre>
+<h3 id="方式-3-钉钉在线文档">方式 3：钉钉在线文档</h3>
+<p>见下面「<strong>三点五、钉钉在线文档</strong>」。</p>
+<p><strong>导入时程序会自动做的事：</strong></p>
+<ul>
+<li>识别每张工作表</li>
+<li>自动猜表头在第几行</li>
+<li><strong>多行表头 / 合并单元格会自动拼成一个字段名</strong>（如第 1 行「2024年」跨两列、第 2 行是「1月」「2月」，会拼成 <code>2024年-1月</code>、<code>2024年-2月</code>）</li>
+<li>从文件名自动猜「实验室」和「表类型」</li>
+</ul>
+<p>导入的文件会<strong>复制一份</strong>到 <code>library\sources\</code>，所以你原来放在钉钉网盘、桌面上的文件可以随便挪，不影响程序。</p>
+<h3 id="表头猜错了怎么办">表头猜错了怎么办？</h3>
+<p>点该行的「详情」，把「表头行」改成正确的行号：</p>
+<ul>
+<li>单行表头填 <code>1</code></li>
+<li>两行表头填 <code>1-2</code></li>
+<li>表头在第 3 行填 <code>3</code></li>
+</ul>
+<p>点「重新识别」立即生效。</p>
+<h3 id="读取方式-列式表格-信息表">「读取方式」：列式表格 / 信息表</h3>
+<p>有些工作表不是"一行一条记录"的列表，而是<strong>左边一栏写标签、右边一栏写内容</strong>，例如：</p>
+<div class="tw"><table class="doc"><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>填报日期</td><td>2026-09-15</td></tr><tr><td>实验室名称</td><td>绵阳市人民医院-检验科</td></tr><tr><td>联系人</td><td>张三</td></tr></tbody></table></div>
+<p>这种表用普通列式读法会读出一堆错位数据。程序在导入时会<strong>自动识别</strong>这类结构并标上橙色的「信息表」标签， 把它读成「项目 / 内容」两列。如果自动判断错了，在「详情」里的「读取方式」下拉框手动切换即可。</p>
+<hr>
+<h2 id="三点二-查看原始数据">三点二、查看原始数据</h2>
+<p>「数据源管理 → 已导入数据表」每一行有 <strong>预览 / 详情 / 删除</strong> 三个按钮。 <strong>「预览」</strong> 用来按 Excel 的<strong>原样</strong>查看文件内容 —— 拿不准"这份表到底长什么样""第几行有问题"时用它。</p>
+<div class="tw"><table class="doc"><thead><tr><th></th><th><strong>预览</strong>（本功能）</th><th>详情里的「数据预览」</th></tr></thead><tbody><tr><td>看的是什么</td><td><strong>原始底稿</strong>：从磁盘文件原样读回</td><td><strong>识别结果</strong>：程序清洗后的数据</td></tr><tr><td>第 1 行</td><td>就是文件的第 1 行（空行、标题行都在）</td><td>已经跳到表头行，标题行被去掉</td></tr><tr><td>多层表头</td><td>保持原样，占几行就是几行</td><td>已拼成一个字段名</td></tr><tr><td>合并单元格</td><td>保留原样</td><td>已按合并且填充</td></tr><tr><td>能切工作表吗</td><td>✅ 点上方标签可切该文件的任意工作表</td><td>❌ 只看第一个工作表</td></tr><tr><td>适合用来</td><td>核对原始内容、定位"第几行数据不对"</td><td>确认"字段识别对不对"</td></tr></tbody></table></div>
+<p>打开后的界面：</p>
+<ul>
+<li><strong>上方标签条</strong> —— 该文件里的所有工作表，点一下切换</li>
+<li><strong>左侧灰色列</strong> —— <strong>行号</strong>，就是 Excel 里的真实行号（1、2、3…），方便你和 Excel 对照</li>
+<li><strong>表头</strong> —— 写的是 <strong>列号 A / B / C…</strong>，对应 Excel 的列标</li>
+<li><strong>右上角橙色角标</strong> —— 「原样显示 · 未清洗」，提醒你这里没有做任何处理</li>
+<li><strong>底部翻页条</strong> —— 每页 50 / 100 / 200 / 500 行可选，默认 100 行，可用「首页 / 上一页 / 下一页 / 末页」翻</li>
+</ul>
+<blockquote class="doc"><p><strong>关于"列被裁掉"的提示</strong>：有些表在 Excel 里给整行<strong>拖过格式</strong>，程序读到的列数会被撑到 16384（Excel 的列上限），</p><p>但实际有内容的可能只有十几列。这种情况下预览会<strong>自动裁掉末尾的空列</strong>，并在信息行提示</p><p>「已裁掉末尾空列（原 N 列 → 显示 M 列）」。这只是不显示空列，<strong>不会影响你的原始文件和汇总结果</strong>。</p></blockquote>
+<h3 id="在预览里直接改数据">在预览里直接改数据</h3>
+<p>预览界面右上角有个 <strong>「编辑模式」开关</strong>（默认是关的，防止手滑改坏数据）。把它打开后，就能直接在这张表上动手：</p>
+<div class="tw"><table class="doc"><thead><tr><th>想干什么</th><th>怎么做</th></tr></thead><tbody>
+<tr><td><strong>改一个格</strong></td><td><strong>双击</strong>那个格子 → 直接输入新内容 → 按 <strong>Enter</strong> 确认（按 <strong>Esc</strong> 取消）</td></tr>
+<tr><td><strong>清空一个格</strong></td><td>先<strong>点一下</strong>选中它（会有一圈蓝色框）→ 按 <strong>Delete</strong> 或 <strong>Backspace</strong></td></tr>
+<tr><td><strong>删整行</strong></td><td>把鼠标移到那一行的<strong>行号</strong>上，会出现一个红色 <strong>✕</strong>，点它就删这行</td></tr>
+<tr><td><strong>删整列</strong></td><td>把鼠标移到<strong>列号</strong>（A / B / C…）上，会出现红色 <strong>✕</strong>，点它就删这列</td></tr>
+<tr><td><strong>撤销 / 重做</strong></td><td>上方工具条的「<strong>↶ 撤销</strong>」「<strong>↷ 重做</strong>」，或键盘 <strong>Ctrl+Z / Ctrl+Y</strong></td></tr>
+<tr><td><strong>删掉整个子表</strong></td><td>把鼠标移到<strong>上方的子表标签</strong>上，会出现红色 <strong>✕</strong>，点它就删掉整个子表（见下）</td></tr>
+<tr><td><strong>不要这些改动了</strong></td><td>点「<strong>丢弃编辑</strong>」，一键恢复成原始数据</td></tr>
+<tr><td><strong>把改完的结果保存回这份表</strong></td><td>点「<strong>保存并替换原文件</strong>」，直接<strong>覆盖</strong>这份数据表本身（覆盖前会自动备份原文件，见下）</td></tr>
+<tr><td><strong>把改完的结果另存一份</strong></td><td>点「<strong>导出为新文件</strong>」，选 xlsx 或 csv，另存一份、不动原表</td></tr>
+</tbody></table></div>
+<p>改过的格子会<strong>标黄</strong>，右上角有个橙色小三角；上方会显示「<strong>● 已改 N 处</strong>」。</p>
+<h4 id="保存并替换原文件">保存并替换原文件</h4>
+<p>改完之后，如果你希望<strong>这份数据表本身</strong>就是改完的样子（而不是每次都要重新编辑一遍），点工具条上的「<strong>保存并替换原文件</strong>」：</p>
+<div class="tw"><table class="doc"><thead><tr><th>要点</th><th>说明</th></tr></thead><tbody>
+<tr><td><strong>会覆盖什么</strong></td><td>直接写回<strong>你导入的那份文件</strong>（<code>library\sources\</code> 里的那份）。写完后预览、汇总、分析报告全都用新数据</td></tr>
+<tr><td><strong>覆盖前自动备份</strong></td><td><strong>第一次写回前</strong>会先把原文件复制一份到「<strong>导出结果\_原始文件备份\</strong>」，文件名带时间戳（如 <code>0919-1_20260921_174500.xlsx</code>）。备份成功才会动手，备份失败会中止</td></tr>
+<tr><td><strong>中途断电会不会毁文件</strong></td><td>不会。程序先把结果写到一个<strong>临时文件</strong>，写完确认无误后再<strong>一次性替换</strong>原文件，不会出现"写到一半原始文件坏了"</td></tr>
+<tr><td><strong>删掉的列 / 子表怎么算</strong></td><td>你留住什么就写回什么 —— <strong>删掉的列不写回</strong>，<strong>删掉的子表从文件里消失</strong>（会自动重算工作表列表）</td></tr>
+<tr><td><strong>写回后索引会自动刷新</strong></td><td>工作表列表、列名、行数会重新识别一次，不用你手动重新导入</td></tr>
+<tr><td><strong>要确认一次</strong></td><td>弹框会写明：要覆盖哪个文件、会写几个子表多少行、哪些子表会被删掉、备份落在哪</td></tr>
+<tr><td><strong>误覆盖了怎么恢复</strong></td><td>去「<strong>导出结果\_原始文件备份\</strong>」找带时间戳的那份，复制回来覆盖即可</td></tr>
+</tbody></table></div>
+<blockquote class="doc"><p>保存成功后信息行会显示一个绿色角标「<strong>已保存回原文件</strong>」；如果之后又改了东西，角标会自动消失（提示你还有未落盘的改动）。</p><p>写回后本次的编辑状态会<strong>清零</strong>（改动已经落到文件里了，不需要再叠一层），撤销栈也一并清空。</p></blockquote>
+<h4 id="删掉整个子表">删掉整个子表</h4>
+<p>有些文件里带着整张用不上的工作表（比如样表、说明页、去年的旧数据）。不用先去 Excel 里删掉再重新导入 —— 在预览里<strong>把鼠标移到上方的子表标签上</strong>，标签右边会出现一个小红 <strong>✕</strong>，点它即可删掉<strong>整个子表</strong>。</p>
+<div class="tw"><table class="doc"><thead><tr><th>要点</th><th>说明</th></tr></thead><tbody>
+<tr><td><strong>红 ✕ 什么时候出现</strong></td><td>只在<strong>编辑模式开着</strong>、<strong>鼠标移到标签上</strong>时出现。平时看不见，避免手滑</td></tr>
+<tr><td><strong>删的时候会先确认</strong></td><td>弹框会明确告诉你：这个改动不写成文件、只影响界面数据、可随时撤销</td></tr>
+<tr><td><strong>删了当前正在看的表</strong></td><td>会自动切到<strong>右边相邻</strong>的子表；右边没有就切左边，保证界面不空</td></tr>
+<tr><td><strong>撤销 / 重做</strong></td><td>和改单元格共用同一条撤销时间线，<strong>Ctrl+Z 就能把它变回来</strong></td></tr>
+<tr><td><strong>删错了想全恢复</strong></td><td>点「<strong>丢弃编辑</strong>」，所有被删的子表会<strong>全部回来</strong></td></tr>
+<tr><td><strong>至少留一张</strong></td><td>不允许把子表全删光（全删了预览就没东西可看了），删到只剩一张时 ✕ 不再出现</td></tr>
+<tr><td><strong>导出时怎么算</strong></td><td>选 <strong>xlsx</strong> 会把你<strong>剩下的所有子表</strong>各写成一个工作表、装进<strong>同一个新工作簿</strong>；被删掉的不导出。选 <strong>csv</strong> 一次只能存一张表，所以只导当前这张，界面会提示</td></tr>
+<tr><td><strong>保存回原文件时怎么算</strong></td><td>被删掉的子表<strong>从文件里真正消失</strong>；留在界面上的子表照原样写回</td></tr>
+</tbody></table></div>
+<blockquote class="doc"><p>被删的子表名会在上方显示成「<strong>已删 N 个子表</strong>」的角标，一眼能看到这次动了哪几张。</p><p>删子表这个动作本身<strong>不写成文件</strong>，要落盘同样点「保存并替换原文件」或「导出为新文件」。</p></blockquote>
+<blockquote class="doc warn"><p><strong>⚠️ 默认只改内存，想落盘要你明确点一下</strong></p>
+<p>预览里的编辑<strong>默认不落盘</strong> —— 你导入的那份文件是「数据源」，汇总、分析报告、数据透视全都依赖它。</p>
+<p><strong>故意</strong>这么设计：如果在预览里改一下就悄悄改掉原始文件，你后面所有的汇总结果都会跟着变，而且<strong>你根本不会发现</strong>。</p>
+<p>所以规则是：</p>
+<ul>
+<li>你在预览里怎么改，<strong>磁盘上的原始文件一动不动</strong>（改完去文件管理器看，修改时间、大小都没变）</li>
+<li>想落盘有两条路，都<strong>必须你主动点</strong>：<br>① 「<strong>保存并替换原文件</strong>」→ 覆盖这份数据表本身（<strong>覆盖前自动备份</strong>到「导出结果\_原始文件备份」）<br>② 「<strong>导出为新文件</strong>」→ 另存到「<strong>导出结果</strong>」文件夹，文件名带「<strong>已编辑</strong>」字样，<strong>不覆盖</strong>原表</li>
+<li><strong>什么都不点就关掉程序，这些改动就没了</strong>（重新打开又是原始数据）—— 这是预期行为，不是 bug</li>
+</ul>
+<p>底部提示条会一直提醒你当前状态：没改动时是灰色的说明文字；<strong>一旦有未保存的改动，会变成橙色的警示条</strong>。</p></blockquote>
+<hr>
+<h2 id="三点三-删除不需要的导出文件">三点三、删除不需要的导出文件</h2>
+<p>每次在「汇总提取」里点「导出 Excel」，程序都会在<strong>程序目录的「导出结果」文件夹</strong>里留一份备份， 方便你过一会儿再下载一次。用得久了这个文件夹会越攒越多，现在可以直接在程序里清理。</p>
+<p>位置：<strong>设置 → 最近导出的文件</strong>。</p>
+<div class="tw"><table class="doc"><thead><tr><th>操作</th><th>怎么用</th><th>会删掉什么</th></tr></thead><tbody><tr><td><strong>删除</strong>（每条右侧）</td><td>点某一条右侧的「删除」</td><td>这条记录 + 「导出结果」里对应的那个文件</td></tr><tr><td><strong>清空全部</strong>（标题右侧）</td><td>点卡片标题右侧的「清空全部」</td><td>「导出结果」里的<strong>全部</strong>导出文件</td></tr></tbody></table></div>
+<p>两个操作都会<strong>先弹确认框</strong>，确认后才动手；删掉的文件<strong>不能恢复</strong>。</p>
+<h3 id="几点说明">几点说明</h3>
+<ul>
+<li><strong>只会删程序自己留的备份</strong>。你之前点「导出 Excel」时浏览器另存到「下载」文件夹的那一份，</li>
+</ul>
+<p>以及你自己拷到别处的副本，<strong>都不受影响</strong>。</p>
+<ul>
+<li>「清空全部」<strong>只删文件，不会删子文件夹</strong> —— 万一你往「导出结果」里放了别的东西，不会被动到。</li>
+<li>列表默认只显示<strong>最近 15 份</strong>。如果文件比这多，列表下方会提示「共 N 份，这里只列出最近 15 份」，</li>
+</ul>
+<p>较早的可以点「打开导出目录」去文件夹里看。</p>
+<ul>
+<li>想连文件夹一起清理，也可以用卡片上方的「打开导出目录」，在资源管理器里自己删。</li>
+</ul>
+<h3 id="和-清除结果-的区别">和「清除结果」的区别</h3>
+<p>「汇总提取」里的「清除结果」清的是<strong>界面上当前这份汇总结果</strong>（数据表、勾选、已导出的文件都不动）； 这里的「删除」清的是<strong>磁盘上已导出的文件</strong>。两者互不影响。</p>
+<h2 id="三点五-钉钉在线文档">三点五、钉钉在线文档</h2>
+<p>在「数据源管理」页有一块「<strong>钉钉在线文档</strong>」。它提供三条路，按你的条件选一条即可：</p>
+<div class="tw"><table class="doc"><thead><tr><th>方式</th><th>需要什么</th><th>怎么用</th></tr></thead><tbody><tr><td><strong>① 扫描钉钉目录</strong>（最稳，推荐）</td><td>什么都不用配</td><td>点「扫描钉钉目录里的表格」，程序自动在<strong>钉盘（DingDrive）挂载目录、钉钉下载目录、桌面、文档</strong>里找 <code>.xlsx/.csv</code>，勾选后点「导入所选」</td></tr><tr><td><strong>② 直连钉钉（本地 MCP）</strong></td><td>装「钉钉」连接器 + 填访问令牌</td><td>点「测试连接并列出工具」，成功后就能直接调钉钉的工具把在线表格取回来</td></tr><tr><td><strong>③ 命令行模板</strong></td><td>装了钉钉 CLI</td><td>在 ③ 填一条命令模板（<code>{url}</code>、<code>{out}</code> 是占位符），点「用命令行拉取并导入」</td></tr></tbody></table></div>
+<p><strong>关于①②③怎么选：</strong></p>
+<ul>
+<li>钉钉的<strong>在线文档本质是网页</strong>，要汇总必须先变成表格数据。所以最省事的是：在钉钉里「导出为 Excel」，然后走①扫描，或直接拖进虚线框。</li>
+<li>方式②需要<strong>钉钉连接器</strong>提供访问令牌。程序会自动检测钉钉桌面客户端有没有在跑（读本机端口），</li>
+</ul>
+<p>检测到了会显示绿点；令牌只保存在本机 <code>library/index.json</code>，界面只回显掩码，不回传明文。</p>
+<ul>
+<li>三条路都不影响其他功能，不配也完全能用。</li>
+</ul>
+<blockquote class="doc"><p>提醒：如果钉盘没挂载到本机（比如钉钉重装过），①扫不到文件是正常的 ——</p><p>那就手动「导出为 Excel」再拖进来，或者把钉盘重新挂载一下。</p></blockquote>
+<hr>
+<h2 id="三点六-字段字典-纵向-横向">三点六、字段字典（纵向 / 横向）</h2>
+<p>「字段字典」页里列的都是<strong>表头本身</strong>——程序为了提示而拼上去的「（说明）」不算字段名， 会放到「同义写法 / 完整列名」那一栏里，不参与归类。</p>
+<p>页面上方可以切换两种看法：</p>
+<div class="tw"><table class="doc"><thead><tr><th>视图</th><th>长什么样</th><th>用来干什么</th></tr></thead><tbody><tr><td><strong>纵向列表</strong></td><td>一行一个字段，显示出现几个文件、几个工作表、涉及哪些数据表</td><td>找字段、看同义写法</td></tr><tr><td><strong>横向矩阵</strong></td><td>行 = 字段，列 = 数据文件，交点打 ✓（括号里是几个工作表用到）</td><td><strong>一眼看出哪些文件有同一个字段</strong></td></tr></tbody></table></div>
+<p>底部两个按钮直接接下一步：</p>
+<ul>
+<li><strong>「用这些字段纵向汇总」</strong>：勾选字段 → 跳到「汇总提取」，自动按这些字段把各文件<strong>纵向堆起来</strong>。</li>
+</ul>
+<p>&gt; 判断依据：横向矩阵里同一行 ✓ 越多，说明这个字段越通用，越适合纵向合并。</p>
+<ul>
+<li><strong>「用这个字段做横向关联」</strong>：勾选一个字段（当"键"）→ 跳到「横向关联」，主表关联键自动填好。</li>
+</ul>
+<p>&gt; 判断依据：能当"键"的字段（比如"实验室名称""客户""序号"）适合横向关联。</p>
+<hr>
+<h2 id="四-汇总数据-最常用">四、汇总数据（最常用）</h2>
+<p>进「汇总提取」页，按 ① → ④ 四步走：</p>
+<h3 id="①-选数据表">① 选数据表</h3>
+<p>左边列表里勾选要汇总的表：</p>
+<div class="tw"><table class="doc"><thead><tr><th>操作</th><th>说明</th></tr></thead><tbody><tr><td>勾<strong>文件名</strong>前的方框</td><td>该文件的<strong>所有工作表</strong>一起选 / 取消</td></tr><tr><td>勾<strong>具体某个工作表</strong></td><td>只选这一张</td></tr><tr><td>点文件名左边的 <strong>▾ 箭头</strong></td><td><strong>折叠 / 展开</strong>这个文件的工作表（文件多的时候很好用）</td></tr><tr><td><strong>全部折叠 / 全部展开</strong></td><td>一键把所有文件收起来或铺开</td></tr><tr><td><strong>全选 / 全不选</strong></td><td>一键全勾或全清</td></tr><tr><td>上面的搜索框</td><td>按「实验室 / 表类型 / 文件名」筛选</td></tr><tr><td><strong>仅选中表头一致的表</strong></td><td>打开一个弹窗，<strong>自己挑一张表当基准</strong>，再一键对齐（详见下）</td></tr><tr><td><strong>查看已勾选</strong></td><td>打开一个弹窗，<strong>把所有已勾选的工作表汇总到一处</strong>，直接在里面取消勾选（详见下）</td></tr><tr><td>（概览页）<strong>一键合并</strong></td><td>在「概览」页的表头结构分组里，<strong>一键把同组表全部勾选 + 自动填好输出字段</strong>，直接跳到本页。详见「一键合并」一节</td></tr></tbody></table></div>
+<blockquote class="doc"><p>「全选 / 全不选 / 全部折叠」只作用于<strong>当前筛选后看得见</strong>的文件，</p><p>不会误改被搜索过滤掉、你看不到的表。</p></blockquote>
+<p><strong>「仅选中表头一致的表」怎么用？</strong></p>
+<p>点按钮后会弹出一个<strong>基准表选择窗口</strong>，分三步：</p>
+<p><strong>第 1 步 · 选基准</strong> 在列表里点任意一行，它就成为基准（弹窗顶部会显示基准表）。也可以勾方框选<strong>多张表头相同的表</strong>组成基准组。</p>
+<blockquote class="doc"><p>弹窗一开始会<strong>自动预选"列名最全的那张表"</strong>作为起点，一般直接用它就行。</p></blockquote>
+<p><strong>第 2 步 · 选作用范围</strong></p>
+<div class="tw"><table class="doc"><thead><tr><th>范围</th><th>用途</th></tr></thead><tbody><tr><td><strong>全库</strong>（默认）</td><td>扫全库，把所有符合基准的表都挑出来 —— 适合"我要找齐所有同类表"</td></tr><tr><td><strong>仅在已勾选的表里</strong></td><td>只在你已经勾好的表里做收缩，不新增表 —— 适合"已勾了一堆，帮我清掉不匹配的"</td></tr></tbody></table></div>
+<p><strong>第 3 步 · 看预览，确认</strong></p>
+<p>弹窗会把你范围内的每张表分三档列出来，<strong>确认无误再点「按这个基准对齐勾选」</strong>：</p>
+<div class="tw"><table class="doc"><thead><tr><th>档位</th><th>标记</th><th>处理</th></tr></thead><tbody><tr><td>完全一致</td><td>&lt;kbd&gt;表头一致&lt;/kbd&gt; 绿</td><td>勾上</td></tr><tr><td>缺列子集</td><td>&lt;kbd&gt;缺 N 列&lt;/kbd&gt; 橙</td><td>勾上（缺的列汇总时留空）</td></tr><tr><td>表头不符</td><td>&lt;kbd&gt;表头不符&lt;/kbd&gt; 灰</td><td>取消勾选</td></tr></tbody></table></div>
+<p><strong>判定规则：</strong></p>
+<div class="tw"><table class="doc"><thead><tr><th>规则</th><th>说明</th></tr></thead><tbody><tr><td>只看表头</td><td><strong>不比对任何单元格内容</strong>，数据不同不影响判定</td></tr><tr><td>列名比对</td><td>归一化后比较：全角转半角、去空格、去标点、转小写（「项目名称」=「项目 名称」）</td></tr><tr><td>忽略顺序</td><td>列的顺序不同也算一致（<code>A,B,C</code> 与 <code>C,A,B</code> 视为同一结构）</td></tr><tr><td><strong>允许子集</strong></td><td>这张表的列名只要<strong>能被基准组全覆盖</strong>就算一致，缺的列汇总时留空</td></tr></tbody></table></div>
+<p><strong>举个例子</strong>（这也是为什么会需要"允许子集"）：</p>
+<blockquote class="doc"><p>基准组 8 列：<code>EQA计划大类 / 专业代码 / EQA名称 / 项目名称 / 项目缩写 / 是否参加 / 试剂品牌 / 是否重点关注</code></p><p>另一张表 7 列，只少「是否重点关注」→ <strong>算一致，会被选中</strong>（那列留空）。</p><p>反过来，基准组 7 列、另一张多出「是否重点关注」→ <strong>不算</strong>（多出的列基准组里没有）。</p></blockquote>
+<ul>
+<li>点完的提示形如：<code>已按 8 列的基准对齐：新增 15 张，取消 0 张不符，含 10 张缺列子集</code>。</li>
+<li>点完后每张表后面会带标记（&lt;kbd&gt;表头一致&lt;/kbd&gt; / &lt;kbd&gt;缺 N 列&lt;/kbd&gt; / &lt;kbd&gt;超出基准&lt;/kbd&gt;），一眼看出为什么被取消。</li>
+<li>基准组和范围<strong>会被记住</strong>，下次打开弹窗还是上次的选择。</li>
+<li>按 <code>Esc</code> 或点右上角 <code>✕</code> 可关闭弹窗，不做任何改动。</li>
+</ul>
+<blockquote class="doc"><p>💡 <strong>为什么基准要自己挑，不能自动？</strong></p><p>同一套模板会派生出一堆"兄弟表"（比如「室间质评填报」8 列、「正确度验证填报」7 列、</p><p>「参考实验室填报」7 列），它们互为超集关系。如果让程序自动投票，结果会随你</p><p><strong>勾选的先后顺序</strong>漂移，很难预期；交给你指定，结果就完全可控。</p></blockquote>
+<p><strong>「查看已勾选」怎么用？</strong></p>
+<p>勾了一堆表之后，如果想知道<strong>到底勾了哪些</strong>，或者想取消其中几张，不必回到左边长列表里一个个找 —— 点这个按钮。</p>
+<p>弹窗会列出<strong>当前所有已勾选的工作表</strong>：</p>
+<div class="tw"><table class="doc"><thead><tr><th>内容</th><th>说明</th></tr></thead><tbody><tr><td>顶部小计</td><td><code>已勾选 12 张</code>（+ 本次已取消几张）<code>· 勾选的分布在 3 个文件里</code>，一眼看出规模和分散情况</td></tr><tr><td>分组列表</td><td>按<strong>文件</strong>分组，每组标出 <code>已勾选 3/4 张</code>（分子是还勾着的，分母是本窗口列出的）</td></tr><tr><td>每行内容</td><td>工作表名 · 行数 · 字段数，下面一行是该表的<strong>字段清单</strong></td></tr><tr><td>筛选框</td><td>勾选很多时，按工作表名 / 文件名 / 实验室筛出想看的那几张</td></tr><tr><td><strong>全部恢复勾选</strong></td><td>把筛出来的（或全部）重新勾上；如果你一张都没取消，它会提示「这些都已经勾选了」</td></tr></tbody></table></div>
+<p><strong>取消勾选</strong>：点行、或点行首的方框都可以。</p>
+<p>取消后<strong>这一行不会消失</strong> —— 它就留在原位，只是勾选框变成空的、整行变淡，并在表名后标一个 &lt;kbd&gt;已取消&lt;/kbd&gt;：</p>
+<ul>
+<li><strong>方便对照着勾回来</strong>：想在几行之间来回比较、或者取消错了想撤回，直接再点一下那一行就勾回来了，不用重新找。</li>
+<li><strong>方便看清改了哪几张</strong>：顶部会显示 <code>本次已取消 N 张</code>，被取消的行一眼可辨。</li>
+<li><strong>分组小计同步</strong>：如 <code>已勾选 3/4 张</code>，立刻知道是这个文件里少了一张。</li>
+</ul>
+<p>取消的效果<strong>立即生效并同步到主界面</strong> —— 左边 ① 的勾选状态马上跟着变，不用再确认一次。</p>
+<blockquote class="doc"><p>重新打开这个弹窗时，清单会<strong>按当时的勾选情况重新生成</strong> —— 上次取消掉的那些不再出现，</p><p>也就是这里始终以"你当前真正勾了哪些"为起点，不会留一堆历史痕迹。</p><p>如果之前用「仅选中表头一致的表」设过基准，这里每张表还会标出</p><p>&lt;kbd&gt;表头一致&lt;/kbd&gt; / &lt;kbd&gt;缺 N 列&lt;/kbd&gt; / &lt;kbd&gt;超出基准&lt;/kbd&gt;，</p><p>顺便就能看出这批表结构是否整齐。<strong>没设过基准就不显示这些标记</strong>（弹窗里有一句提示会说明原因）。</p></blockquote>
+<p>关闭方式：右上角 ✕、底部的<strong>完成</strong>，或按 <code>Esc</code>。<strong>关掉窗口不影响已做的改动</strong>（取消的勾选依然是取消的）。</p>
+<h3 id="②-选字段">② 选字段</h3>
+<p>右边会自动列出选中表里出现过的<strong>所有字段</strong>（按归一化去重，「服务需求」和「服务需求 」会合并成一个）。 勾上你要的字段就行。字段后面会写「出现在 5/8 张选中的表」。</p>
+<h3 id="③-筛选条件-可选">③ 筛选条件（可选）</h3>
+<p>想只看某类数据时用。比较方式一律用<strong>符号</strong>显示（鼠标悬停会显示中文说明）：</p>
+<div class="tw"><table class="doc"><thead><tr><th>符号</th><th>意思</th><th>符号</th><th>意思</th></tr></thead><tbody><tr><td><code>⊃</code></td><td>包含</td><td><code>⊅</code></td><td>不包含</td></tr><tr><td><code>=</code></td><td>等于</td><td><code>≠</code></td><td>不等于</td></tr><tr><td><code>&gt;</code></td><td>大于</td><td><code>&lt;</code></td><td>小于</td></tr><tr><td><code>≥</code></td><td>大于等于</td><td><code>≤</code></td><td>小于等于</td></tr><tr><td><code>∅</code></td><td>为空</td><td><code>≠∅</code></td><td>不为空</td></tr></tbody></table></div>
+<p>例：「处理状态」<code>⊃</code> <code>未处理</code>；「日期」<code>≥</code> <code>2026-01-01</code>。 选 <code>∅</code> / <code>≠∅</code> 时后面的值框会自动灰掉（这两项不需要填值）。</p>
+<h3 id="④-输出选项">④ 输出选项</h3>
+<ul>
+<li><strong>增加来源列</strong>：结果里多出「来源实验室 / 来源文件 / 来源工作表」三列，方便追溯（建议保持勾选）</li>
+<li><strong>整行去重</strong></li>
+<li><strong>排序字段</strong> / <strong>条数上限</strong></li>
+</ul>
+<h3 id="一键合并-从概览直接开工">一键合并（从概览直接开工）</h3>
+<p>如果几张表的<strong>表头完全一致</strong>，不必在本页一张张勾 —— 直接在「概览」页操作更快。</p>
+<p><strong>怎么用</strong></p>
+<ol>
+<li>点左侧导航进「<strong>概览</strong>」</li>
+<li>找到「<strong>表头结构分组</strong>」卡片 —— 程序会自动把<strong>表头（列名）完全一致</strong>的工作表归成一组</li>
+<li>每组右侧有一个「<strong>一键合并</strong>」按钮，点它</li>
+</ol>
+<p><strong>点完之后程序做了什么</strong></p>
+<div class="tw"><table class="doc"><thead><tr><th>动作</th><th>说明</th></tr></thead><tbody><tr><td>勾选这组表</td><td>把该组所有工作表<strong>追加</strong>进「① 选数据表」的勾选（<strong>不影响你已有的其他勾选</strong>）</td></tr><tr><td>自动填输出字段</td><td>把「② 选要输出的字段」<strong>直接填成这组表的列名</strong></td></tr><tr><td>跳到汇总提取</td><td>自动切到「汇总提取」页，你只需再点「<strong>生成汇总表</strong>」</td></tr></tbody></table></div>
+<blockquote class="doc"><p>为什么能自动填字段？因为这一组的<strong>列名本来就完全一样</strong>，字段映射必然是 1:1，</p><p>不需要人工对齐。这也是「表头完全一致」这个分组存在的意义。</p></blockquote>
+<p><strong>按钮上的小字</strong></p>
+<ul>
+<li>分组标题后面如果显示 &lt;kbd&gt;已勾选 3/5&lt;/kbd&gt;，说明这组 5 张表里已经有 3 张在勾选状态</li>
+<li>「一键合并」是<strong>追加式</strong>的：已经勾上的不会取消，只把没勾的补上</li>
+</ul>
+<p><strong>和「仅选中表头一致的表」有什么区别？</strong></p>
+<div class="tw"><table class="doc"><thead><tr><th></th><th>一键合并（概览）</th><th>仅选中表头一致的表（汇总提取）</th></tr></thead><tbody><tr><td>入口</td><td>概览 · 表头结构分组</td><td>汇总提取 · ① 选数据表工具栏</td></tr><tr><td>分组依据</td><td><strong>程序自动分好</strong>（只看「完全一致」）</td><td>你<strong>自己挑基准</strong>，可含「缺列子集」</td></tr><tr><td>效果</td><td>勾选 + <strong>自动填输出字段</strong> + 跳页</td><td>只调整<strong>勾选</strong>，字段要自己选</td></tr><tr><td>适合</td><td>表头一模一样、想快点合并</td><td>表头略有差异、想精细控制</td></tr></tbody></table></div>
+<blockquote class="doc"><p>两者不冲突：可以先用「仅选中表头一致的表」框定范围，再回概览用「一键合并」快速开工。</p></blockquote>
+<h3 id="合并前先预览-一键合并旁边的-预览">合并前先预览（一键合并旁边的「预览」）</h3>
+<p>概览的「表头结构分组」里，每一组都有一对按钮：<strong>预览</strong> 和 <strong>一键合并</strong>。</p>
+<p>点「预览」会<strong>真的把这一组跑一遍合并</strong>，然后弹窗告诉你：</p>
+<div class="tw"><table class="doc"><thead><tr><th>看什么</th><th>说明</th></tr></thead><tbody><tr><td>一共多少行 / 多少列</td><td>例如「3 张表 → 合并后 705 行 / 10 列」</td></tr><tr><td>参与合并的数据表</td><td>每张表的实验室、工作表名，以及<strong>各自并进来多少行</strong></td></tr><tr><td>合并后的列名</td><td>会输出哪些字段（含自动加上的「来源实验室 / 来源文件 / 来源工作表」）</td></tr><tr><td>前 30 行数据</td><td>真实跑出来的结果，能直接看出数据对不对、有没有空值、来源列对不对</td></tr></tbody></table></div>
+<p>看完觉得没问题，点弹窗右下角的「<strong>就这样合并</strong>」，就等同于点了这一组的「一键合并」 （把这组表全部勾选、输出字段自动填好、跳到「汇总提取」）；不想合并直接关闭即可。</p>
+<p>两点说明：</p>
+<ul>
+<li>预览<strong>不会占用「汇总结果」</strong>，也不写任何文件 —— 它只是算一遍给你看。</li>
+</ul>
+<p>真正的结果仍然要你在「汇总提取」里点「生成汇总表」才会产生。</p>
+<ul>
+<li>如果某张表没能并进来（比如表头识别不对、源文件不见了），预览弹窗顶部会用橙色提示</li>
+</ul>
+<p>是哪张表、什么原因，比合并完才发现少了几行更容易定位。</p>
+<h3 id="字段不一致的表怎么一起汇总">字段不一致的表怎么一起汇总？</h3>
+<p>展开最下面的「<strong>高级：字段映射</strong>」。 程序已经帮你自动对齐了（列名一样或高度相似的会自动配上），你可以手动改每一列对应的输出字段。 例：A 表叫「需求描述」，B 表叫「问题描述」，C 表叫「内容」——把这三个都映射到输出字段「需求描述」，就能合并了。</p>
+<p>每张表一块，点表头左边的 <strong>▾ 箭头</strong>就能<strong>折叠 / 展开</strong>这一块； 上面还有「<strong>全部折叠</strong>」「<strong>全部展开</strong>」，表多的时候先全折叠、再展开要调的那一张。 表头右侧会显示「N 列 · 手动调过 M 列」，一眼能看出哪些表你动过。</p>
+<blockquote class="doc"><p><strong>字段映射会自动记住。</strong> 你手动调过的对应关系会存到本机配置里，</p><p>下次打开程序、或者以后再导入同样格式的表，会<strong>自动套用</strong>，不用重新调一遍。</p><p>页面右侧会显示「✓ 映射已记住，下次自动套用」。</p><p>想重来就点「清除记住的映射」。</p></blockquote>
+<p><strong>想核对到底记住了哪些？</strong> 点「<strong>查看映射记录</strong>」，会弹出清单： 按数据表分组，列出每条「源列 → 输出字段」（映射到"不要这一列"的会标红）。 这张清单可以直接拿来交接或排查"为什么这个字段没进结果"。</p>
+<h3 id="生成-导出">生成 → 导出</h3>
+<p>点「生成汇总表」，下面会出现结果表格。<strong>默认每页 500 行</strong>， 右下角可以切换 <strong>100 / 200 / 500 / 1000 / 2000 / 5000 行</strong>，想看多少数据直接调大即可， 用「上一页 / 下一页」翻页。导出始终是<strong>全量</strong>，不受预览行数影响。</p>
+<p>然后点「<strong>导出 Excel</strong>」或「<strong>导出 CSV</strong>」：</p>
+<ol>
+<li><strong>浏览器会直接开始下载这一份</strong>（在浏览器默认的下载位置，比如「下载」文件夹），这是最主要的方式；</li>
+<li>同时程序在 <code>导出结果\</code> 文件夹里<strong>也存了一份备份</strong>；</li>
+<li>导出成功后会出现一个绿色的「导出成功」卡片，上面写着文件名、大小和完整路径，</li>
+</ol>
+<p>点「打开所在文件夹」就能跳到备份目录，点「再下载一次」可以重新下载。</p>
+<blockquote class="doc"><p>之前版本导出后只会写进 <code>导出结果\</code> 文件夹、靠一个弹窗问你要不要打开，</p><p>很容易让人觉得"没导出成功"。现在改成浏览器直接下载，就不用再去翻目录了。</p></blockquote>
+<h3 id="清除结果">清除结果</h3>
+<p>汇总结果卡片上方有两个入口可以<strong>清掉当前这份结果</strong>：</p>
+<div class="tw"><table class="doc"><thead><tr><th>位置</th><th>按钮</th></tr></thead><tbody><tr><td>「生成汇总表」按钮右边</td><td><strong>清除结果</strong></td></tr><tr><td>结果卡片右上角（工具栏）</td><td><strong>清除结果</strong></td></tr></tbody></table></div>
+<p>点一下会先问你确认，确认后程序会：</p>
+<ul>
+<li>收起源卡片（结果预览、分页、来源明细一起隐藏）</li>
+<li>清空界面上的<strong>汇总结果</strong>（<code>S.lastResult</code> 复位）</li>
+</ul>
+<p><strong>不会</strong>影响这些东西：</p>
+<ul>
+<li>✅ 你导入的<strong>数据表</strong>（一张都不删）</li>
+<li>✅ 你在 ①②④ 步做的<strong>勾选和选项</strong>（原样保留，随时能重新生成）</li>
+<li>✅ 已经<strong>导出到文件</strong>的 Excel / CSV（文件还在「导出结果」文件夹里）</li>
+<li>✅ 记住的<strong>字段映射</strong></li>
+</ul>
+<blockquote class="doc"><p>一句话：清除结果 = <strong>只收起桌面上这张成品表</strong>，材料和工具都还在原来位置。</p></blockquote>
+<h3 id="找不到刚才导出的文件">找不到刚才导出的文件？</h3>
+<p>到「<strong>设置</strong>」页最下面的「<strong>最近导出的文件</strong>」，最近 15 份导出都在那里，点「下载」即可重新下载。</p>
+<h3 id="结果会过期吗">结果会过期吗？</h3>
+<p>不会。每次生成的结果都会存在程序目录的 <code>library\results\</code> 里， 即使关掉程序重新打开，之前生成的结果也还能继续导出（下次启动时命令行窗口会提示「已载入 N 份历史汇总结果」）。</p>
+<h3 id="结果分析-数据概览-数据透视">结果分析（数据概览 + 数据透视）</h3>
+<p>汇总出一张表之后，<strong>不用下载、不用再开 Excel</strong>，直接就能看这张表长什么样、或者按字段做个交叉统计。</p>
+<p>这两个功能都在<strong>结果卡片下面</strong>的「<strong>结果分析</strong>」卡片里（生成结果后才出现，点「清除结果」会跟着一起收起）。卡片里有两个页签：</p>
+<div class="tw"><table class="doc"><thead><tr><th>页签</th><th>干什么</th></tr></thead><tbody><tr><td><strong>数据概览</strong></td><td>每一列的情况：有没有缺失、是数字还是文本、都分布成什么样、极值是多少</td></tr><tr><td><strong>数据透视</strong></td><td>自己选行、列、统计方式，做一张交叉表（相当于 Excel 的数据透视表）</td></tr></tbody></table></div>
+<h3 id="数据概览">数据概览</h3>
+<p><strong>点开就已经算好了</strong>，不用点任何按钮。最上面四个数字：</p>
+<div class="tw"><table class="doc"><thead><tr><th>指标</th><th>意思</th></tr></thead><tbody><tr><td><strong>总行数</strong></td><td>这份结果一共多少行</td></tr><tr><td><strong>列数</strong></td><td>一共多少列</td></tr><tr><td><strong>有缺失的列</strong></td><td>有多少列存在空格子（<strong>大于 0 会变成橙色</strong>）</td></tr><tr><td><strong>可统计的数值列</strong></td><td>有多少列能直接做求和 / 均值</td></tr></tbody></table></div>
+<p>下面把<strong>每一列</strong>摊开一行，每行是：</p>
+<div class="tw"><table class="doc"><thead><tr><th>列上显示</th><th>含义</th></tr></thead><tbody><tr><td><strong>类型标签</strong></td><td>数值 / 日期 / 文本 / 长文本 / 空列（带颜色，扫一眼就知道哪列能算）</td></tr><tr><td><strong>非空 / 空值</strong></td><td>这一列有多少格有值、多少格是空的（空值还带占比）</td></tr><tr><td><strong>去重</strong></td><td>这一列有多少个不同的取值</td></tr><tr><td><strong>内容摘要</strong></td><td>按类型给不一样的东西，见下</td></tr></tbody></table></div>
+<p>「内容摘要」按类型给不一样的东西：</p>
+<div class="tw"><table class="doc"><thead><tr><th>类型</th><th>摘要给什么</th></tr></thead><tbody><tr><td><strong>数值</strong></td><td><code>合计 · 均值 · 最小 · 最大 · 中位</code></td></tr><tr><td><strong>日期</strong></td><td><code>最早 · 最晚</code></td></tr><tr><td><strong>文本</strong></td><td>出现最多的<strong>前 5 个</strong>取值 + 各自占比，后面附「等 N 种取值」</td></tr><tr><td><strong>长文本</strong></td><td>只给规模（平均多少字、多少种不同写法）—— 这种列列举前 5 名没意义</td></tr><tr><td><strong>空列</strong></td><td>直接写「整列没有值」</td></tr></tbody></table></div>
+<blockquote class="doc"><p><strong>怎么算「数值列」？</strong> 这一列的非空值里，<strong>九成以上</strong>能转成数字才算。留一成余量是为了容忍个别写着"暂无"的格子；但不能容忍半列文字被当成数字加总。</p><p><strong>⚠ 疑似编号</strong>：如果一列<strong>全是整数、位数又多（6 位以上）、取值还不少</strong>，会提示「<strong>疑似编号，求和/平均通常没有意义</strong>」—— 比如工号、批次号。只是提醒，不拦着你真去算。</p><p>带单位或百分号的（<code>4.62分</code>、<code>12.5%</code>）<strong>不</strong>当数值处理，免得把「评分等级」「满意度百分比」这类字段加成一锅粥。有千分位的（<code>1,234</code>）能正常认出来。</p></blockquote>
+<h3 id="数据透视">数据透视</h3>
+<p>四步，思路跟 Excel 的数据透视表一样：</p>
+<p><strong>① 行维度</strong> —— 左边下拉选一个字段，点「<strong>＋ 加为行维度</strong>」，它就变成一个带序号的小标签。</p>
+<ul>
+<li>可以加<strong>多个</strong>（<strong>最多 3 个</strong>），标签上的序号就是层级顺序，点标签上的 ✕ 移除</li>
+<li><strong>一个都不加也行</strong> —— 那就只按列维度横向展开</li>
+</ul>
+<p><strong>② 列维度</strong>（可选）—— 想让哪个字段的取值<strong>横着铺开</strong>就选它。不选就是普通的一列数字（每行一个值）。</p>
+<p><strong>③ 字段 + 聚合方式</strong></p>
+<div class="tw"><table class="doc"><thead><tr><th>聚合方式</th><th>意思</th><th>要不要选「字段」</th></tr></thead><tbody><tr><td><strong>计数（有几行）</strong></td><td>每个分组里有几行</td><td>不用</td></tr><tr><td><strong>去重计数（几个不同值）</strong></td><td>每个分组里有几个不同取值</td><td><strong>要</strong></td></tr><tr><td><strong>求和</strong></td><td>把该字段的值加起来</td><td><strong>要</strong></td></tr><tr><td><strong>平均</strong></td><td>该字段的平均值（保留 2 位小数）</td><td><strong>要</strong></td></tr><tr><td><strong>最大值</strong></td><td>该字段的最大值</td><td><strong>要</strong></td></tr><tr><td><strong>最小值</strong></td><td>该字段的最小值</td><td><strong>要</strong></td></tr></tbody></table></div>
+<blockquote class="doc"><p>除了「计数」，其它都必须指定<strong>字段</strong> —— 否则程序不知道你要统计的是哪一列的值。没选就点「生成透视表」，会直接提示你先选一个。</p><p>下拉框下面有一行灰字会实时告诉你当前这个聚合方式要不要选字段。</p></blockquote>
+<p><strong>④ 两个勾</strong></p>
+<div class="tw"><table class="doc"><thead><tr><th>勾</th><th>默认</th><th>意思</th></tr></thead><tbody><tr><td><strong>显示合计行列</strong></td><td>勾上</td><td>关掉就只剩明细分组，没有「总计」行和「合计」列</td></tr><tr><td><strong>丢掉分组键全空的行</strong></td><td><strong>不勾</strong></td><td>勾上 = 行维度<strong>全都是空</strong>的那些行不参与统计</td></tr></tbody></table></div>
+<p>然后点「<strong>生成透视表</strong>」。</p>
+<p><strong>关于透视结果，几件要知道的事：</strong></p>
+<ul>
+<li><strong>空值单独成一组</strong>，标签是「<strong>（空）</strong>」，<strong>永远排在最后</strong>，不会被当成 0。</li>
+<li><strong>分组值按自然序排</strong>：<code>1月 &lt; 2月 &lt; 10月</code>，不是字典序的 <code>1月 &lt; 10月 &lt; 2月</code>。</li>
+<li><strong>空值不参与数字计算</strong>：算平均、求和时，空着的格子直接跳过，<strong>不是当 0</strong>。表格下方会写明「N 个单元格不是数字，未计入」。</li>
+<li><strong>行数多也不会卡</strong>：结果最多能有 30 万行，但透视是<strong>在后台算完</strong>再把表格送到界面的，所以 1000 行和 30 万行用起来一样快。</li>
+<li><strong>分组太细会被拦下来</strong>：如果行维度选得像「需求描述」这种几乎每行都不一样的字段，分组会超过 <strong>2 万组</strong>，程序会直接提示你换个字段，而不是硬算到浏览器卡死。</li>
+<li><strong>界面最多显示 2000 行</strong>（分组更多时表格下方会提示「分组共 N 组，界面只显示前 2000 组（导出仍是全量）」）—— 但<strong>导出始终是全量</strong>。</li>
+</ul>
+<p><strong>「合计 / 总计」是怎么算的</strong>（这块最容易看错）：</p>
+<div class="tw"><table class="doc"><thead><tr><th>聚合方式</th><th>合计怎么来</th></tr></thead><tbody><tr><td>求和</td><td><strong>真求和</strong>（各格相加）</td></tr><tr><td>平均</td><td><strong>总数 ÷ 总条数</strong>，<strong>不是</strong>「把各格的平均值再平均一遍」</td></tr><tr><td>去重计数</td><td><strong>整个分组去重</strong>，<strong>不是</strong>各格去重数相加</td></tr><tr><td>最大 / 最小</td><td>该行（列）内的极值</td></tr><tr><td>计数</td><td>该行（列）的行数加总</td></tr></tbody></table></div>
+<h3 id="导出透视表">导出透视表</h3>
+<p>透视表生成后，右上角有「<strong>导出 Excel</strong>」和「<strong>导出 CSV</strong>」：</p>
+<ol>
+<li>点一下<strong>浏览器直接下载</strong>（跟导出汇总结果一个套路）；</li>
+<li>同时也在 <code>导出结果\</code> 文件夹里<strong>留一份备份</strong>；</li>
+<li>文件名形如 <code>数据透视_行维度名_20260921_173000.xlsx</code>；</li>
+<li>导出完成会提示「透视结果已导出：文件名（全量 N 行）」。</li>
+</ol>
+<blockquote class="doc"><p><strong>导出的一定是全部行</strong>，不会跟着界面只导 2000 行。</p></blockquote>
+<hr>
+<h3 id="分析报告">分析报告（v2.1.0 新增）</h3>
+<p><strong>数据透视给的是表格，分析报告给的是一份能直接发出去的 HTML。</strong>同样挂在这张结果卡片下面，在「结果分析」再往下一点。它是<strong>选好模板、一键生成</strong>——不用每次重新想怎么分析，出来的版式每份都一样。</p>
+<p>生成报告需要这份数据里有三列：<strong>检测完成时间</strong>、<strong>模块</strong>（仪器/通道）、<strong>项目名称</strong>。程序会自己按关键词去找，<strong>列名不完全一样也能认出来</strong>（比如叫「完成时间」「出结果时间」都行）；界面上会写清它认到了哪一列。</p>
+<h3 id="两个模板">两个模板</h3>
+<div class="tw"><table class="doc"><thead><tr><th>模板</th><th>回答什么问题</th><th>报告里有什么</th></tr></thead><tbody><tr><td>📊 <strong>设备模块负载与堵塞点</strong></td><td>全天活儿什么时候涌进来？哪个模块被压满？堵点在哪？</td><td>逐时段热力图、各模块负载堆叠图、过载点清单、削峰与单点瓶颈结论</td></tr><tr><td>🧭 <strong>免疫线实际测试速度·证据链</strong></td><td>这台机器<strong>实际</strong>能跑多快？标称 270 是真的吗？</td><td>队列重建图（锁定饱和窗）、各模块实测速度、均衡化模拟、口径说明</td></tr></tbody></table></div>
+<blockquote class="doc"><p>模板卡片上如果有<strong>「缺列」</strong>标记，就是这份数据里没找到它需要的列，这张卡点不动——把缺的那列也勾上再汇总一次即可。如果只有一个模板可用，程序会<strong>自动帮你选中</strong>，少点一下。</p></blockquote>
+<h3 id="多天数据怎么处理">多天数据怎么处理</h3>
+<p>如果你的数据<strong>横跨好几天</strong>（比如一份表里既有 09/19 又有 09/20），程序会<strong>自动识别</strong>并做三件事：</p>
+<div class="tw"><table class="doc"><thead><tr><th>环节</th><th>怎么处理</th><th>为什么</th></tr></thead><tbody><tr><td><strong>时段桶</strong></td><td><strong>按天隔离</strong>：09/19 的 9 点和 09/20 的 9 点是两个<strong>独立格子</strong>，不会相加</td><td>否则两天的量叠成一个桶，峰值、集中度全部失真</td></tr><tr><td><strong>队列重建 + 饱和窗</strong>（模板②）</td><td><strong>每天各算一遍</strong>，再取速度最高的那天作为能力证据</td><td>队列是「当天从零起算」的积压量；跨天累加会把前一天的积压带进第二天，速度就算错了</td></tr><tr><td><strong>报告章节</strong></td><td>多一节「<strong>逐日对比</strong>」：每天的完成量、峰值时段、当天饱和窗、当天实际速度并排列出</td><td>一眼看出哪天最忙、哪天没跑满</td></tr></tbody></table></div>
+<blockquote class="doc"><p><strong>单天数据的行为和以前完全一样</strong>，报告版式不变。多天时结论会写成「N 天合计 / 平均每天」，并给出单日区间。</p><p><strong>时间列如果是「只有日期、没有时刻」</strong>（如只写 <code>2026/09/19</code>）：这些行<strong>只贡献「当天完成量」</strong>，不进小时桶（程序不会替你编造一个「00:00–01:00」的凌晨时段）。报告里会标注有多少行属于这种情况。</p><p><strong>跨天的时段不会连成一片</strong>：饱和窗只在同一天内部找。比如两天各有一段 4 小时的高峰，报告会得到「4 小时」的饱和窗，而不是错误的「8 小时」。</p></blockquote>
+<h3 id="怎么生成">怎么生成</h3>
+<ol>
+<li>点一下模板卡片（选中会变蓝）；</li>
+<li>下面出现<strong>参数框</strong>，按需填（不填就用默认值）；</li>
+<li>（可选）填个<strong>报告文件名</strong>，留空就用「模板默认名 + 日期」；</li>
+<li>点「<strong>生成报告</strong>」。</li>
+</ol>
+<p>生成完会出现一条绿色结果条，写着文件名、大小、用时和几个关键指标，下面三个按钮：<strong>在浏览器里打开</strong> / <strong>打开所在文件夹</strong> / <strong>复制文件路径</strong>。</p>
+<blockquote class="doc"><p><strong>报告是独立文件</strong>，存在程序目录的 <code>分析报告\</code> 里，跟程序窗口没关系 —— 关掉程序、拷给别人、打印成 PDF 都行。<strong>同名不会覆盖</strong>，会自动加 <code>(1)</code>、<code>(2)</code>。图表需要联网加载；<strong>没网也能看</strong>，只是图变成一句提示，表格和结论照常。</p></blockquote>
+<h3 id="参数怎么填">参数怎么填</h3>
+<p><strong>设备模块负载与堵塞点</strong> —— 这个模板不用填参数。</p>
+<p><strong>免疫线实际测试速度·证据链</strong> —— 四个参数：</p>
+<div class="tw"><table class="doc"><thead><tr><th>参数</th><th>默认</th><th>怎么理解</th></tr></thead><tbody><tr><td><strong>单模块标称速度</strong></td><td>270</td><td>一台模块一小时标称能做多少个测试。i6000 系列一般就是 270。<strong>填小了会把饱和度算高</strong>，没把握别动。</td></tr><tr><td><strong>真机模块数</strong></td><td>留空</td><td><strong>把多台设备的表合并时，这个必须填。</strong>见下面的橙色说明。</td></tr><tr><td><strong>测速窗口</strong></td><td><code>auto</code></td><td><code>auto</code> = 程序自己找最忙的那段当窗口；也可以手填 <code>14,20</code> 表示只用 14:00–20:00 这段算。</td></tr><tr><td><strong>对照组模块</strong></td><td>空</td><td>填了之后这些模块在报告里<strong>灰显、不参与速度结论</strong>（比如 2联机跟 3联机不能放一起比）。多个用逗号分隔，如 <code>M2,M3</code>。</td></tr></tbody></table></div>
+<blockquote class="doc"><h3 class="bqh">⚠ 两台设备的表合并时，一定要填「真机模块数」</h3><p>两台 3联机（比如 0919-2 和 0919-3）<strong>都有 M1 / M2 / M3</strong>，一合并名字就<strong>撞上了</strong>。程序如果只看到 3 个名字，就会以为全厂只有 3 个模块，把产能算少一半，算出来的速度<strong>虚高一倍</strong>。</p><p>程序会自己按「<strong>来源文件 × 模块名</strong>」的组合去估真机模块数（两台 3联机 = 6），并在报告里写明「已按 N 个真机模块计产能」。<strong>但如果来源列缺失或本身就不准，你得手工填。</strong></p><p><strong>填小了不采信</strong>：填的数比程序估出来的还小，程序会忽略你、仍按自动值算，防止速度虚高。</p></blockquote>
+<h3 id="设置里的报告相关">设置里的报告相关</h3>
+<p>「分析报告」卡片最下面有「<strong>已有的报告</strong>」折叠区，列出这个文件夹里所有报告（按时间倒序），每份都能<strong>直接打开</strong>或<strong>删除</strong>。「设置」页也会显示<strong>分析报告目录</strong>在哪。</p>
+<hr>
+<h2 id="五-横向关联-vlookup-效果">五、横向关联（VLOOKUP 效果）</h2>
+<p>切到「横向关联」标签：</p>
+<ol>
+<li>选<strong>主表</strong>（以它为准，每一行都会保留）和<strong>关联字段</strong>（如「实验室名称」）</li>
+<li>添加<strong>关联表</strong>，选它对应的关联字段</li>
+<li>点「生成关联表」</li>
+</ol>
+<p>结果 = 主表全部行 + 关联表里匹配上的列。匹配不上的留空。</p>
+<hr>
+<h2 id="六-ai-助手-可选">六、AI 助手（可选）</h2>
+<p>不配也能用全部其他功能。</p>
+<p><strong>配置方法</strong>（「AI 助手」页 → 展开「AI 接口设置」）：</p>
+<div class="tw"><table class="doc"><thead><tr><th>服务</th><th>Base URL</th><th>模型名</th></tr></thead><tbody><tr><td>DeepSeek</td><td><code>https://api.deepseek.com/v1</code></td><td><code>deepseek-chat</code></td></tr><tr><td>通义千问</td><td><code>https://dashscope.aliyuncs.com/compatible-mode/v1</code></td><td><code>qwen-plus</code></td></tr><tr><td>智谱 GLM</td><td><code>https://open.bigmodel.cn/api/paas/v4</code></td><td><code>glm-4-plus</code></td></tr><tr><td>月之暗面 Kimi</td><td><code>https://api.moonshot.cn/v1</code></td><td><code>moonshot-v1-8k</code></td></tr><tr><td>本地 Ollama</td><td><code>http://localhost:11434/v1</code></td><td><code>qwen2.5:14b</code></td></tr></tbody></table></div>
+<p>填好 Base URL、API Key、模型名 → 点「保存」→ 点「测试连接」确认能通。</p>
+<p><strong>用法 1：一句话生成汇总表</strong> 在输入框写「把所有实验室的服务需求记录汇总给我，要实验室、日期、需求分类、需求描述、状态这几列」， 点「让 AI 帮我配好并生成」。AI 会先给出查询计划（可以人工核对），然后自动跳到汇总页执行。</p>
+<p><strong>用法 2：分析结果</strong> 先生成一份汇总表，再在「② 对汇总结果提问」里问，例如「哪一类需求的响应次数最多？」</p>
+<blockquote class="doc"><p>API Key 只保存在本机的 <code>library\index.json</code>，不会发到别处。</p><p>AI 只发送<strong>字段名和少量样例行</strong>用于理解你的需求，完整数据不会上传。</p><p>如果公司网络不允许调用外部 AI，就留空不配置。</p></blockquote>
+<hr>
+<h2 id="七-删除与维护">七、删除与维护</h2>
+<ul>
+<li><strong>删单张表</strong>：数据源管理 → 该行「删除」</li>
+<li><strong>批量删</strong>：勾选左边方框 → 「删除所选」</li>
+<li><strong>全部清空</strong>：设置 → 「清空全部已导入数据」</li>
+<li><strong>彻底重置</strong>：关掉程序，直接删掉整个 <code>library</code> 文件夹，重新打开就是干净的</li>
+</ul>
+<h3 id="7-1-数据自检-原始文件丢了怎么办">7.1 数据自检（原始文件丢了怎么办）</h3>
+<p><strong>拷贝程序时一定要连 <code>library</code> 文件夹一起拷</strong>，只拷 <code>app.py</code> + <code>web</code> 会丢数据。</p>
+<p>如果只带了 <code>library/index.json</code>、没带 <code>library/sources</code>，程序会出现"<strong>索引里写着有 6 张表， 但界面上一张都打不开、汇总也是 0 行</strong>"这种自相矛盾的状态。</p>
+<p>现在，这种情况<strong>概览页会直接弹出橙色告警卡片</strong>，写清楚：</p>
+<ul>
+<li>有几张表的原始文件不在了、分别是哪几张</li>
+<li>三种常见原因（拷贝不完整 / 手工清理过 / 换了电脑）</li>
+<li>怎么修：到「数据源管理」删掉这些旧记录，重新导入原始 Excel 即可（导入后字段会自动识别）</li>
+</ul>
+<blockquote class="doc"><p>之前还有一处相关的兜底：点「生成汇总表」时如果源文件不在，会直接弹错误说明，</p><p>而不是默默返回 0 行 —— 属于同一类问题的防护。</p></blockquote>
+<hr>
+<h2 id="八-目录结构">八、目录结构</h2>
+<pre class="code"><code>智慧实验室数据汇总助手\
+├── start.bat            ← 双击这个启动
+├── app.py               程序主体
+├── web\                 界面文件
+├── library\             ← 你的数据都在这里
+│   ├── index.json       索引（表清单、标注、设置、AI Key）
+│   ├── sources\         导入的原始文件副本
+│   └── results\         生成过的汇总结果（重启后仍可导出，自动保留最近 20 份）
+├── 导出结果\             ← 每次导出都会在这里留一份备份
+└── 使用说明.md</code></pre>
+<hr>
+<h2 id="九-常见问题">九、常见问题</h2>
+<p><strong>Q：点「生成汇总表」，提示「找不到源文件」？</strong> 说明 <code>library\sources\</code> 里的原始文件没了。 什么时候会发生：拷程序时只拷了 <code>library\index.json</code>、没拷 <code>library\sources</code>；手工清理过 <code>sources</code> 文件夹；换了电脑。 怎么修：到「数据源管理」页把这些旧记录删掉，重新导入一遍原始 Excel（导入后字段会重新自动识别）。</p>
+<blockquote class="doc"><p>左侧列表里的表名和字段是<strong>索引</strong>（<code>index.json</code>），即使原始文件丢了也照样显示，</p><p>所以会出现"看起来有 5 张表、34 个字段，一点生成却报错"的情况。</p></blockquote>
+<p><strong>Q：结果是 0 行？</strong> 结果区会列三条排查提示：① 筛选条件把数据全过滤掉了；② 勾选的字段和这些表对不上（展开「字段映射」看看每列有没有配上）；③ 选错了工作表。</p>
+<p><strong>Q：点了「导出 Excel」没反应 / 找不到文件？</strong></p>
+<ul>
+<li>先看有没有绿色的「导出成功」卡片，或者红色的错误卡片 —— 现在失败一定会明确告诉你原因。</li>
+<li>浏览器会自动下载一份，去浏览器的下载位置找（一般是「下载」文件夹）。</li>
+<li>备份在程序目录的 <code>导出结果\</code> 里；到「设置」页最下面的「<strong>最近导出的文件</strong>」也能看到并重新下载。</li>
+<li>如果提示「请先点上面的生成汇总表」：说明当前没有可导出的结果，先在第 ① / ② 步选好表与字段、生成结果，再导出。</li>
+</ul>
+<p><strong>Q：字段名怎么变成 <code>列6</code>、<code>列7</code>、<code>列8</code> 了？</strong> 说明表头那行被认错了（认成了第一条数据行）。到「数据源管理」→ 该工作表「详情」， 把「表头行」手动改成正确行号（通常就是 <code>1</code>），点「重新识别」即可。</p>
+<blockquote class="doc"><p>新版识别规则已经修好了「表头里有一整列还没填 → 认错表头」这类问题；</p><p>升级后老数据会在启动时自动重算，命令行窗口会提示「已按新版识别规则刷新 N 个数据表的识别结果」。</p><p>另外：如果某个工作表<strong>本身就没有表头行</strong>（比如第一行直接是数据），</p><p>出现 <code>列1</code>、<code>列2</code> 是正常的 —— 那是源表里真的没写列名。</p></blockquote>
+<p><strong>Q：点「生成汇总表」按钮完全没反应？</strong> 这是程序早期版本的一个 bug：「生成汇总表」按钮<strong>忘了接上点击事件</strong>（函数写好了但没接线）， 现在已经修好。请把程序重启一次（关掉黑色窗口，重新双击 <code>start.bat</code>）， 然后<strong>刷新一下浏览器页面</strong>（按 F5），让新版界面生效。</p>
+<blockquote class="doc"><p>新版还加了开机自检：如果再有按钮没接上，页面会直接弹红框告诉你，不会再"静默无反应"。</p></blockquote>
+<p><strong>Q：导入一个很大的工作簿特别慢 / 卡住？</strong> Excel 里给整列拖过边框或格式之后，文件会"声称"这个工作表有 104 万行， 实际上里面绝大多数是空行。老版本会老老实实读完这 100 万行，一个 4MB 的文件要 25 秒。 新版会先扫一遍只读真正有数据的行 —— 同样这个文件降到 6 秒以内。</p>
+<blockquote class="doc"><p>如果你手上还有特别大的表，导入后留意一下「数据源管理」里显示的<strong>行数</strong>：</p><p>如果行数明显比实际大很多（比如显示 100 多万），说明是老版本导入的记录，</p><p>重启程序会自动重算。</p></blockquote>
+<p><strong>Q：备份要拷什么？</strong> 拷 <code>library\</code> 整个文件夹（含 <code>index.json</code> 和 <code>sources\</code>）。<strong>只拷 <code>index.json</code> 会丢源文件</strong>，下次汇总就会报「找不到源文件」。</p>
+<p><strong>Q：程序放哪儿好？</strong> 放哪都行，但<strong>不要放在钉钉网盘同步目录里</strong>（同步会锁文件）。建议放 <code>D:\智慧实验室数据汇总助手\</code> 这类本地目录。</p>
+<p><strong>Q：升级了程序版本，老数据要重新导入吗？</strong> 不用。新版启动时会自动按新的识别规则刷新所有表的结构信息，命令行窗口会打印「已按新版识别规则刷新 N 个数据表的结构信息」。</p>
+<p><strong>Q：.xls（老格式）导不进来？</strong> 程序只支持 .xlsx / .xlsm / .csv。用 Excel 打开 .xls 另存为 .xlsx 即可。</p>
+<p><strong>Q：表格特别大（几万行）会不会卡？</strong> 读取和汇总都是流式的，几万行没问题。汇总结果默认只预览前 300 行，导出的是全量。</p>
+<p><strong>Q：能让两个人同时用吗？</strong> 这是本机程序，只监听 <code>127.0.0.1</code>，别人访问不到。想共享就把程序目录放在共享盘上各自运行，或者在各自的电脑上装一份。</p>
+<p><strong>Q：端口被占用？</strong> 程序会自动往后找 8765~8804 里没被占用的端口，看命令行窗口显示的地址为准。</p>
+<p><strong>Q：黑色窗口关了 / 网页提示「连不上本地程序了」？</strong> 程序是跟着那个黑色窗口跑的，关掉窗口程序就停了。重新双击 <code>start.bat</code>，然后刷新网页即可。</p>
+  </main>
+</div>
+<button class="htop" id="htop" title="回到顶部">↑</button>
+<script>
+(function(){
+  var top=document.getElementById('htop');
+  window.addEventListener('scroll',function(){ top.classList.toggle('show', window.scrollY>400); });
+  top.onclick=function(){ window.scrollTo({top:0,behavior:'smooth'}); };
+  // 平滑滚动到锚点
+  document.querySelectorAll('#htoc a').forEach(function(a){
+    a.onclick=function(e){
+      var el=document.querySelector(a.getAttribute('href'));
+      if(!el) return;
+      e.preventDefault();
+      window.scrollTo({top: el.getBoundingClientRect().top + window.scrollY - 18, behavior:'smooth'});
+      history.replaceState(null,'',a.getAttribute('href'));
+    };
+  });
+  // 搜索：过滤目录 + 高亮正文
+  var box=document.getElementById('hsearch');
+  var main=document.getElementById('hmain');
+  var raw=main.innerHTML;
+  box.addEventListener('input',function(){
+    var kw=box.value.trim().toLowerCase();
+    // 目录过滤（用 class 控制，避免覆盖窄屏响应式规则）
+    document.querySelectorAll('#htoc a').forEach(function(a){
+      a.classList.toggle('hid', !!kw && a.textContent.toLowerCase().indexOf(kw) < 0);
+    });
+    if(!kw){ main.innerHTML=raw; return; }
+    // 正文高亮：只处理文本节点，避免破坏标签
+    var w=document.createElement('div'); w.innerHTML=raw;
+    var walk=document.createTreeWalker(w, NodeFilter.SHOW_TEXT, null);
+    var nodes=[], x; while(x=walk.nextNode()) nodes.push(x);
+    var hit=0;
+    nodes.forEach(function(t){
+      var s=t.nodeValue, l=s.toLowerCase(), idx=l.indexOf(kw);
+      if(idx<0) return; hit++;
+      var frag=document.createDocumentFragment(), last=0;
+      while(idx>=0){
+        frag.appendChild(document.createTextNode(s.slice(last,idx)));
+        var mk=document.createElement('mark');
+        mk.textContent=s.slice(idx,idx+kw.length);
+        mk.style.cssText='background:#ffe89a;padding:0 2px;border-radius:3px';
+        frag.appendChild(mk);
+        last=idx+kw.length; idx=l.indexOf(kw,last);
+      }
+      frag.appendChild(document.createTextNode(s.slice(last)));
+      t.parentNode.replaceChild(frag,t);
+    });
+    main.innerHTML=w.innerHTML;
+    var tip=document.getElementById('hcount');
+    if(tip) tip.textContent = hit? ('匹配 '+hit+' 处') : '没有找到';
+  });
+})();
+</script>
+</body>
+</html>

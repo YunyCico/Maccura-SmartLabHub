@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智慧实验室运营管理-数据汇总助手（实验室运营管理部）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="side">
+    <div class="brand">
+      <img class="brandlogo" src="logo-maccura-w.svg" alt="迈克生物 MACCURA">
+      <div class="brandrule"></div>
+      <div class="brandtxt">
+        <div class="btitle">智慧实验室运营管理</div>
+        <div class="bsub">数据汇总助手</div>
+        <div class="borg">实验室运营管理部</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a data-page="home" class="active"><i>▤</i>概览</a>
+      <a data-page="sources"><i>▣</i>数据源管理</a>
+      <a data-page="fields"><i>≣</i>字段字典</a>
+      <a data-page="build"><i>∑</i>汇总提取</a>
+      <a data-page="ai"><i>✦</i>AI 助手</a>
+      <a data-page="settings"><i>⚙</i>设置</a>
+      <a class="navhelp" href="./help.html" target="_blank" rel="noopener"><i>❓</i>使用说明</a>
+    </nav>
+    <div class="sidefoot">
+      <div class="stat-mini"><span id="sf-ds">0</span> 张数据表</div>
+      <div class="stat-mini"><span id="sf-fields">0</span> 个字段</div>
+      <div class="hint">数据全部保存在本机</div>
+      <a class="sfhelp" href="./help.html" target="_blank" rel="noopener">❓ 使用说明</a>
+      <div class="sfver">迈克生物 · <span id="sf-ver">v2.4.0</span></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ============ 概览 ============ -->
+    <section class="page active" id="page-home">
+      <h1>概览</h1>
+      <p class="lead">把所有实验室的表格导进来，程序会自动识别字段结构；需要哪部分数据时，勾上字段就能一键汇总成一张表。
+        不熟悉的话，先看一下<a class="inlinehelp" href="./help.html" target="_blank" rel="noopener">使用说明</a>。</p>
+      <!-- 数据自检告警：索引里有记录但原始文件没了（拷贝程序时只带了 index.json、或手工清过 sources） -->
+      <div class="card warncard" id="data-warn" style="display:none"></div>
+      <div class="cards">
+        <div class="card kpi"><div class="kv" id="kpi-ds">0</div><div class="kl">已导入数据表</div></div>
+        <div class="card kpi"><div class="kv" id="kpi-sheet">0</div><div class="kl">工作表</div></div>
+        <div class="card kpi"><div class="kv" id="kpi-row">0</div><div class="kl">数据总行数</div></div>
+        <div class="card kpi"><div class="kv" id="kpi-field">0</div><div class="kl">不同字段</div></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>按实验室分布</h2>
+          <div id="home-labs" class="bars"></div>
+        </div>
+        <div class="card">
+          <h2>按表类型分布</h2>
+          <div id="home-types" class="bars"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>表头结构分组（表头完全一致的表可一键合并）</h2>
+        <div id="home-groups" class="groups"></div>
+      </div>
+
+      <div class="card">
+        <h2>快速开始</h2>
+        <ol class="steps">
+          <li><b>导入表格</b> —— 进「数据源管理」，把各实验室的 Excel 拖进来（支持一次多选、也支持整个文件夹）</li>
+          <li><b>确认字段</b> —— 程序会自动猜表头行，多行表头/合并单元格会拼成一个字段名，不对可手动改</li>
+          <li><b>选字段汇总</b> —— 进「汇总提取」，勾选要的数据表 → 勾选想要的字段 → 点生成</li>
+          <li><b>导出</b> —— 结果直接导出成 Excel，文件在程序目录的「导出结果」文件夹里</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ 数据源 ============ -->
+    <section class="page" id="page-sources">
+      <h1>数据源管理</h1>
+      <p class="lead">导入、查看、删除数据表。所有导入的文件都会复制一份存到本程序的 <code>library/sources</code> 里，原文件可以随意挪动。</p>
+
+      <div class="card">
+        <div class="drop" id="drop">
+          <div class="drop-ico">⇪</div>
+          <div class="drop-t">把 Excel / CSV 拖到这里，或</div>
+          <div class="drop-btns">
+            <button class="btn primary" id="btn-choose">选择文件导入</button>
+            <input type="file" id="file-input" multiple accept=".xlsx,.xlsm,.csv" hidden>
+          </div>
+          <div class="drop-tip">支持多选；文件名会自动识别「实验室」和「表类型」，可在下方修改</div>
+        </div>
+        <div class="pathrow">
+          <input id="folder-path" placeholder="也可以直接粘贴文件夹路径，例如：C:\Users\98319\DingDrive (孟鹏杰)\迈克生物集团\我的文件\实验室运营管理部\智慧实验室项目统计">
+          <button class="btn" id="btn-scan">扫描文件夹</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>钉钉在线文档</h2>
+        <div class="dt-status" id="dt-status">
+          <span class="dt-dot" id="dt-dot"></span>
+          <span id="dt-text">正在检测钉钉…</span>
+          <span style="flex:1"></span>
+          <button class="btn small" id="btn-dt-refresh">重新检测</button>
+        </div>
+
+        <div class="dt-grid">
+          <label>① 钉钉文档链接（在线表格 / 在线文档的分享链接）
+            <input id="dt-url" placeholder="粘贴钉钉在线文档链接，例如 https://alidocs.dingtalk.com/i/nodes/xxxx">
+          </label>
+          <label>② 访问令牌（装了「钉钉」连接器后填入，只保存在本机，不回显）
+            <input id="dt-token" type="password" placeholder="留空则不改动；填了就保存">
+          </label>
+          <label>③ 命令行模板（可选。装了钉钉 CLI 后可用，{url} 和 {out} 是占位符）
+            <input id="dt-cli" placeholder='例如：dingtalk doc export --url "{url}" --out "{out}"'>
+          </label>
+        </div>
+
+        <div class="dt-actions">
+          <button class="btn primary" id="btn-dt-test">测试连接并列出工具</button>
+          <button class="btn" id="btn-dt-pull">用命令行拉取并导入</button>
+          <button class="btn" id="btn-dt-scan">扫描钉钉目录里的表格</button>
+          <button class="btn small" id="btn-dt-save">保存钉钉设置</button>
+        </div>
+
+        <div class="dt-log" id="dt-log" style="display:none"></div>
+        <div id="dt-files" style="margin-top:12px"></div>
+
+        <p class="tip" style="margin-top:12px">
+          <b>三条路，按条件选：</b>
+          ① 最稳的是「扫描钉钉目录」——钉盘（DingDrive）挂载目录、钉钉下载目录里的表格都能直接找到导入；
+          ② 装了「钉钉」连接器并填好令牌后，可以「测试连接」，直接调钉钉的工具把在线表格取回来；
+          ③ 也可以配一条命令行模板，用外部命令导出后自动导入。
+          在线文档需要导成表格（xlsx/csv）才能汇总，钉钉本身是网页文档时请先导出。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="toolbar">
+          <div class="tl">已导入数据表 <span class="badge" id="src-count">0</span></div>
+          <div class="tr">
+            <label class="chk"><input type="checkbox" id="src-all"> 全选</label>
+            <button class="btn small" id="btn-restore-recent">恢复最近导入的文件</button>
+            <button class="btn small" id="btn-bulk-lab">批量设实验室</button>
+            <button class="btn small" id="btn-bulk-type">批量设表类型</button>
+            <button class="btn small danger" id="btn-bulk-del">删除所选</button>
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table class="grid" id="src-table">
+            <thead><tr>
+              <th style="width:38px"></th><th>文件 / 工作表</th><th style="width:130px">实验室</th>
+              <th style="width:150px">表类型</th><th style="width:90px">行数</th>
+              <th style="width:80px">字段</th><th style="width:140px">导入时间</th><th style="width:130px">操作</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="src-empty">还没有导入任何数据表。上面拖文件进来即可。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 字段字典 ============ -->
+    <section class="page" id="page-fields">
+      <h1>字段字典</h1>
+      <p class="lead">
+        这里只列<b>表头本身</b>（程序为了提示拼上去的说明不算字段名）。同一个字段在不同表里写法略有差异的会自动归到一起。
+        可以按<b>纵向列表</b>看，也可以切到<b>横向矩阵</b>——横着看就能一眼看出哪些文件有同一个字段，
+        有同一字段的才能纵向堆叠，字段做得成"键"的才能横向关联。
+      </p>
+      <div class="card">
+        <div class="toolbar">
+          <input class="search" id="fd-search" placeholder="搜索字段名…">
+          <div class="tr">
+            <span class="seg">
+              <button class="btn small on" id="fd-view-v">纵向列表</button>
+              <button class="btn small" id="fd-view-h">横向矩阵</button>
+            </span>
+            <button class="btn small" id="fd-onlymulti">只看出现在多张表的字段</button>
+            <button class="btn primary small" id="fd-use">用这些字段纵向汇总</button>
+            <button class="btn small" id="fd-join">用这个字段做横向关联</button>
+          </div>
+        </div>
+        <div class="tablewrap" id="fd-wrap-list">
+          <table class="grid" id="fd-table">
+            <thead><tr>
+              <th style="width:38px"></th><th>字段名（表头）</th><th>同义写法 / 完整列名</th>
+              <th style="width:100px">出现表数</th><th style="width:90px">工作表数</th>
+              <th style="width:220px">涉及数据表</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="fd-empty">还没有字段。先导入数据表。</div>
+        </div>
+        <div class="tablewrap" id="fd-wrap-matrix" style="display:none">
+          <table class="grid" id="fd-matrix"></table>
+          <div class="tip" style="margin-top:8px">
+            ✓ = 该文件里有这个字段（括号里是有几个工作表用到）；· = 没有。
+            行内 ✓ 越多，说明这个字段在各文件里越通用。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 汇总提取 ============ -->
+    <section class="page" id="page-build">
+      <h1>汇总提取</h1>
+
+      <div class="tabs">
+        <button class="tab active" data-mode="union">纵向合并（多张同类表叠成一张）</button>
+        <button class="tab" data-mode="join">横向关联（按关键字段把别的表的列带进来）</button>
+      </div>
+
+      <!-- ---- union ---- -->
+      <div id="pane-union">
+        <div class="cols2">
+          <div class="card">
+            <h2>① 选择要汇总的数据表</h2>
+            <div class="mini-toolbar">
+              <input class="search" id="src-filter" placeholder="按实验室 / 表类型 / 文件名筛选…">
+              <button class="btn small" id="src-pick-all">全选</button>
+              <button class="btn small" id="src-pick-none">全不选</button>
+              <button class="btn small" id="src-fold-all">全部折叠</button>
+              <button class="btn small" id="src-unfold-all">全部展开</button>
+              <button class="btn small" id="src-pick-same" title="只看表头（列名），不看单元格内容。点开后可自选一张表作基准，再选作用范围（全库 / 仅已勾选），预览确认后一次性对齐。">仅选中表头一致的表</button>
+              <button class="btn small" id="src-picked-view" title="列出当前所有已勾选的工作表，可直接在里面取消勾选。">查看已勾选</button>
+              <button class="btn small" id="src-refresh" title="重新从磁盘读取数据表列表。刚在「数据源管理」导入过表格、但这里没看到时，点一下即可。">↻ 刷新</button>
+            </div>
+            <div class="tip" id="src-same-hint" style="margin:-2px 0 8px">「仅选中表头一致的表」只比对<b>表头列名</b>，与单元格内容无关。点开后可<b>自己挑一张表作基准</b>，并选择<b>全库</b>或<b>仅在已勾选的表里</b>对齐 —— 会先列出「完全一致 / 缺列子集 / 表头不符」三档让你确认。</div>
+            <div class="tip" id="src-picked-hint" style="margin:-2px 0 8px">勾选后点「查看已勾选」可以一次性看到<b>所有已勾选的工作表</b>，在弹窗里直接取消勾选，不用在长列表里一个个找。</div>
+            <div class="picklist" id="picklist"></div>
+          </div>
+
+          <div class="card">
+            <h2>② 选择要输出的字段</h2>
+            <div class="mini-toolbar">
+              <input class="search" id="field-filter" placeholder="筛选字段…">
+              <button class="btn small" id="field-all">全选</button>
+              <button class="btn small" id="field-none">清空</button>
+            </div>
+            <div class="picklist small" id="fieldlist"><div class="empty sm">先在上一步勾选数据表</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>③ 筛选条件（可选）</h2>
+          <div id="filterlist"></div>
+          <button class="btn small" id="add-filter">＋ 添加条件</button>
+          <div class="tip">例：字段「状态」包含「未处理」；或「日期」≥ 2026-01-01。留空表示不过滤。</div>
+        </div>
+
+        <div class="card">
+          <h2>④ 输出选项</h2>
+          <div class="optrow">
+            <label class="chk"><input type="checkbox" id="opt-src" checked> 增加「来源实验室 / 来源文件 / 来源工作表」列</label>
+            <label class="chk"><input type="checkbox" id="opt-dedup"> 整行去重</label>
+            <label class="chk">排序字段
+              <select id="opt-sort-field"><option value="">不排序</option></select>
+            </label>
+            <label class="chk">条数上限 <input type="number" id="opt-limit" value="0" min="0" style="width:90px"> <span class="tip">0=不限</span></label>
+          </div>
+          <details class="mapbox">
+            <summary>高级：字段映射（列名不同但意思相同的表也能合并）</summary>
+            <div class="maphead">
+              <span class="tip">你在这里调整过的对应关系会<b>自动记住</b>，下次导入同样的表自动套用，不用再调一遍。</span>
+              <span style="flex:1"></span>
+              <button class="btn small" id="btn-map-fold">全部折叠</button>
+              <button class="btn small" id="btn-map-unfold">全部展开</button>
+              <button class="btn small" id="btn-map-view">查看映射记录</button>
+              <button class="btn ghost small" id="btn-map-clear">清除记住的映射</button>
+              <span class="tip" id="map-saved"></span>
+            </div>
+            <div id="mapping"></div>
+          </details>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary big" id="btn-run">生成汇总表</button>
+          <button class="btn ghost big" id="btn-run-clear" title="清除已生成的汇总结果（不影响数据表和勾选）">清除结果</button>
+          <span class="tip" id="run-tip"></span>
+        </div>
+      </div>
+
+      <!-- ---- join ---- -->
+      <div id="pane-join" style="display:none">
+        <div class="card">
+          <h2>主表（以它为准，保留全部行）</h2>
+          <div class="optrow">
+            <select id="j-base-ds" class="sel wide"></select>
+            <select id="j-base-sheet" class="sel"></select>
+            <label class="chk">按字段关联 <select id="j-base-on" class="sel"></select></label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>关联表（从这些表里把列带进来）</h2>
+          <div id="joins"></div>
+          <button class="btn small" id="add-join">＋ 添加关联表</button>
+          <div class="tip">关联方式为「左连接」：主表的每一行都会保留，关联表里有匹配的就把对应列填上，没匹配的留空。</div>
+        </div>
+        <div class="card">
+          <h2>输出选项</h2>
+          <div class="optrow">
+            <label class="chk"><input type="checkbox" id="j-dedup"> 整行去重</label>
+            <label class="chk">条数上限 <input type="number" id="j-limit" value="0" min="0" style="width:90px"></label>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn primary big" id="btn-run-join">生成关联表</button>
+          <span class="tip" id="run-tip2"></span>
+        </div>
+      </div>
+
+      <div class="card errorcard" id="error-card" style="display:none"></div>
+      <div class="card exportcard" id="export-card" style="display:none"></div>
+
+      <div class="card resultcard" id="result-card" style="display:none">
+        <div class="toolbar">
+          <div class="tl">汇总结果 <span class="badge" id="res-count">0</span> 行</div>
+          <div class="tr">
+            <button class="btn small primary" id="btn-export-xlsx">导出 Excel</button>
+            <button class="btn small" id="btn-export-csv">导出 CSV</button>
+            <button class="btn small" id="btn-open-out">打开导出文件夹</button>
+            <button class="btn small danger" id="btn-res-clear" title="清除这份汇总结果（已导出的文件不受影响）">清除结果</button>
+          </div>
+        </div>
+        <div id="res-detail" class="detail"></div>
+        <div class="tablewrap tall">
+          <table class="grid" id="res-table"></table>
+        </div>
+        <div class="pager">
+          <label class="chk">每页
+            <select id="res-size">
+              <option value="100">100 行</option>
+              <option value="200">200 行</option>
+              <option value="500" selected>500 行</option>
+              <option value="1000">1000 行</option>
+              <option value="2000">2000 行</option>
+              <option value="5000">5000 行</option>
+            </select>
+          </label>
+          <button class="btn small" id="res-prev">上一页</button>
+          <span id="res-pageinfo"></span>
+          <button class="btn small" id="res-next">下一页</button>
+        </div>
+      </div>
+
+      <!-- ---- v2.0.0 结果分析（生成汇总/关联结果后才出现） ---- -->
+      <div class="card" id="analysis-card" style="display:none">
+        <div class="toolbar">
+          <div class="tl">结果分析 <span class="badge" id="an-badge">—</span></div>
+          <div class="tr">
+            <span class="seg">
+              <button class="btn small on" id="an-tab-p">数据概览</button>
+              <button class="btn small" id="an-tab-x">数据透视</button>
+            </span>
+          </div>
+        </div>
+
+        <!-- 数据概览：逐列的类型 / 缺失 / 去重 / 极值 -->
+        <div id="an-pane-profile">
+          <div class="tip" id="an-loading" style="display:none"><span class="an-spin"></span> 正在统计每一列…</div>
+          <div class="tip" id="an-fail" style="display:none"></div>
+          <div id="an-body" style="display:none">
+            <div class="cards" id="an-kpis"></div>
+            <div class="tablewrap tall">
+              <table class="grid" id="an-table"></table>
+            </div>
+            <div class="an-sum" id="an-sum"></div>
+          </div>
+        </div>
+
+        <!-- 数据透视：行维度 + 列维度 + 值字段 + 聚合方式 -->
+        <div id="an-pane-pivot" style="display:none">
+          <div class="optrow">
+            <label class="chk">添加行维度
+              <select id="pv-dim-sel" class="sel"></select>
+            </label>
+            <button class="btn small" id="pv-dim-add">＋ 加为行维度</button>
+            <span class="tip">最多 3 个，按添加顺序分组</span>
+          </div>
+          <div class="pv-dims" id="pv-dims"></div>
+          <div class="optrow">
+            <label class="chk">列维度 <select id="pv-col" class="sel"></select></label>
+            <label class="chk">字段 <select id="pv-val" class="sel"></select></label>
+            <label class="chk">聚合方式 <select id="pv-agg" class="sel"></select></label>
+            <label class="chk"><input type="checkbox" id="pv-total" checked> 显示合计行列</label>
+            <label class="chk"><input type="checkbox" id="pv-dropblank"> 丢掉分组键全空的行</label>
+            <button class="btn primary small" id="pv-run">生成透视表</button>
+          </div>
+          <div class="tip" id="pv-hint"></div>
+          <div id="pv-out" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <!-- ---- v2.1.0 分析报告（生成汇总结果后才出现） ---- -->
+      <div class="card" id="report-card" style="display:none">
+        <div class="toolbar">
+          <div class="tl">分析报告 <span class="badge" id="rp-badge">—</span></div>
+          <div class="tr">
+            <span class="tip">选一个模板，生成一份独立 HTML 报告（存进「分析报告」文件夹）</span>
+          </div>
+        </div>
+
+        <!-- 模板卡片：点一下选中，下方出参数 -->
+        <div class="rp-tpls" id="rp-tpls"></div>
+
+        <!-- 选中模板的参数与操作 -->
+        <div id="rp-work" style="display:none">
+          <div class="rp-optbox" id="rp-opts"></div>
+          <div class="optrow">
+            <label class="chk">报告文件名（可空）
+              <input type="text" id="rp-name" class="inp" placeholder="留空 = 用模板默认名 + 日期"
+                     style="width:320px">
+            </label>
+            <button class="btn primary" id="rp-run">生成报告</button>
+            <button class="btn small" id="rp-open-dir">打开报告文件夹</button>
+            <span class="tip" id="rp-tip"></span>
+          </div>
+          <div class="tip" id="rp-loading" style="display:none"><span class="an-spin"></span> 正在计算并渲染报告…（数据量大时会久一点）</div>
+          <div class="tip" id="rp-fail" style="display:none"></div>
+          <div id="rp-done" style="display:none"></div>
+        </div>
+
+        <!-- 生成历史 -->
+        <details class="mapbox rp-histbox" id="rp-histbox">
+          <summary>已有的报告（<span id="rp-hist-n">0</span> 份）</summary>
+          <div id="rp-hist" class="rp-hist"></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ============ AI ============ -->
+    <section class="page" id="page-ai">
+      <h1>AI 助手</h1>
+      <p class="lead">用大白话描述你要的数据，AI 自动帮你选表、选字段、生成汇总表。也可以让它对汇总结果做分析。</p>
+
+      <div class="card aiwarn" id="ai-warn">
+        ⚠ 还没配置 AI 接口。展开下方「AI 接口设置」填上 API Key 就能用；不填也不影响其他功能。
+      </div>
+
+      <div class="card">
+        <h2>① 一句话说清你要什么</h2>
+        <textarea id="ai-q" rows="3" placeholder="例如：把所有实验室的“服务需求”记录汇总给我，要实验室、日期、需求分类、需求描述、处理状态这几列"></textarea>
+        <div class="actions">
+          <button class="btn primary" id="btn-ai-plan">让 AI 帮我配好并生成</button>
+          <span class="tip" id="ai-tip"></span>
+        </div>
+        <details class="mapbox" open>
+          <summary>AI 理解到的查询计划（可人工核对后再执行）</summary>
+          <pre id="ai-plan" class="code">（还没有）</pre>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>② 对汇总结果提问</h2>
+        <textarea id="ai-a" rows="2" placeholder="例如：哪一类需求的响应次数最多？哪些实验室升级次数偏高？"></textarea>
+        <div class="actions"><button class="btn" id="btn-ai-analyze">分析当前汇总结果</button></div>
+        <div id="ai-answer" class="answer"></div>
+      </div>
+
+      <div class="card">
+        <details class="mapbox">
+          <summary>AI 接口设置（支持 OpenAI 兼容接口：DeepSeek / 通义 / 智谱 / 月之暗面 / 本地 Ollama…）</summary>
+          <div class="formgrid">
+            <label>接口地址 Base URL</label><input id="ai-url" placeholder="https://api.deepseek.com/v1">
+            <label>API Key</label><input id="ai-key" type="password" placeholder="sk-...">
+            <label>模型名称</label><input id="ai-model" placeholder="deepseek-chat">
+            <label>温度</label><input id="ai-temp" type="number" step="0.1" min="0" max="2" value="0.2">
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="btn-ai-save">保存</button>
+            <button class="btn" id="btn-ai-test">测试连接</button>
+            <label class="chk"><input type="checkbox" id="ai-clear"> 同时清除已保存的 Key</label>
+          </div>
+          <div class="tip">
+            常用配置 —— DeepSeek：<code>https://api.deepseek.com/v1</code> + <code>deepseek-chat</code>；
+            通义千问：<code>https://dashscope.aliyuncs.com/compatible-mode/v1</code> + <code>qwen-plus</code>；
+            智谱：<code>https://open.bigmodel.cn/api/paas/v4</code> + <code>glm-4-plus</code>；
+            本地 Ollama：<code>http://localhost:11434/v1</code> + <code>qwen2.5:14b</code>。
+            Key 只保存在本机 <code>library/index.json</code>，不会外传。
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ============ 设置 ============ -->
+    <section class="page" id="page-settings">
+      <h1>设置</h1>
+      <div class="card">
+        <h2>实验室名称清单</h2>
+        <p class="tip">导入文件时，程序会优先按这份清单识别「实验室」。一行一个，填简称即可（如 江油九O三）。</p>
+        <textarea id="set-labs" rows="8" placeholder="江油九O三&#10;绵阳市人民&#10;…"></textarea>
+      </div>
+      <div class="card">
+        <h2>常用表类型清单</h2>
+        <p class="tip">一行一个，导入时用于自动识别表类型（如 问题、需求反馈表）。</p>
+        <textarea id="set-types" rows="6" placeholder="问题、需求反馈表&#10;测试数分析表&#10;服务需求&#10;…"></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-save-config">保存设置</button>
+      </div>
+      <div class="card">
+        <h2>数据与文件</h2>
+        <div class="kv-row"><span>程序版本</span><code id="set-version"></code></div>
+        <div class="kv-row"><span>程序目录</span><code id="set-basedir"></code></div>
+        <div class="kv-row"><span>数据目录</span><code id="set-libdir"></code></div>
+        <div class="kv-row"><span>导出目录</span><code id="set-outdir"></code></div>
+        <div class="actions">
+          <button class="btn" id="btn-open-lib">打开数据目录</button>
+          <button class="btn" id="btn-open-out2">打开导出目录</button>
+          <button class="btn danger" id="btn-clear-all">清空全部已导入数据</button>
+        </div>
+        <p class="tip">导入的原始文件放在 <code>library/sources</code>，删除记录时对应文件也会一起删掉。想彻底重置可以直接删除整个 <code>library</code> 文件夹。</p>
+      </div>
+      <div class="card">
+        <h2 class="chead">最近导出的文件
+          <button class="btn small danger" id="btn-clear-exports" disabled title="删除「导出结果」目录里的全部文件">清空全部</button>
+        </h2>
+        <p class="tip">每次导出都会在程序目录的「导出结果」里留一份备份。下面是最近的几份，可以直接重新下载。
+          不需要的可以点「删除」清掉（磁盘上的那份也会一起删，删了不能恢复）。</p>
+        <div id="exports-list" class="explist"></div>
+      </div>
+    </section>
+    <footer class="appfoot">
+      <b>智慧实验室运营管理-数据汇总助手</b>
+      <span>迈克生物集团 · 实验室运营管理部</span>
+      <span class="sep">|</span>
+      <span>本程序仅供部门内部使用，请勿外传</span>
+    </footer>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal"><div class="modal-box"><div class="modal-head"><span id="modal-title"></span><button id="modal-close">✕</button></div><div class="modal-body" id="modal-body"></div></div></div>
+
+<div class="modal" id="psdlg">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <span>选择基准表（只看表头列名）</span>
+      <button id="ps-x">✕</button>
+    </div>
+    <div class="modal-body psmain">
+      <div class="psrow-top">
+        <div class="pslbl">基准组（1 张或多张表头相同的表）</div>
+        <div class="psbase" id="ps-base"></div>
+      </div>
+      <div class="pstool">
+        <div class="pslbl">作用范围</div>
+        <button class="btn small ps-scope" data-scope="all">全库（找齐所有同类表）</button>
+        <button class="btn small ps-scope" data-scope="pick">仅在已勾选的表里</button>
+        <span style="flex:1"></span>
+        <button class="btn small ghost" id="ps-clear">清空基准</button>
+      </div>
+      <div class="psstats" id="ps-stats"></div>
+      <div class="pslist" id="ps-list"></div>
+
+      <div class="psfoot">
+        <span class="tip">点任意一行 = 设为「唯一基准」；勾方框 = 加进基准组（多张表头相同的表）</span>
+        <span style="flex:1"></span>
+        <button class="btn small" id="ps-cancel">取消</button>
+        <button class="btn primary" id="ps-apply">按这个基准对齐勾选</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="pkdlg">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <span>已勾选的数据表</span>
+      <button id="pk-x">✕</button>
+    </div>
+    <div class="modal-body psmain">
+      <div class="psstats" id="pk-stats"></div>
+      <div class="pstool">
+        <input class="search" id="pk-filter" placeholder="筛选已勾选的工作表…" style="flex:1">
+        <button class="btn small ghost" id="pk-check-all">全部恢复勾选</button>
+      </div>
+      <div class="pslist" id="pk-list"></div>
+      <div class="psfoot">
+        <span class="tip">取消勾选后会立即生效，并同步到主界面；关掉这个窗口不影响结果。</span>
+        <span style="flex:1"></span>
+        <button class="btn primary" id="pk-ok">完成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

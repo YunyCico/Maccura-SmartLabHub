@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { fetchDashboardSummary, type DashboardSummary } from './api/dashboard'
 import { fetchCurrentUser, type CurrentUser } from './api/user'
-import ImportPreview from './components/ImportPreview.vue'
+import DataAnalysis from './components/DataAnalysis.vue'
 
 const activeSection = ref('工作台')
 const loading = ref(true)
@@ -28,7 +28,7 @@ const workspaceModules = [
     code: '01',
     label: '数据分析',
     section: '数据分析',
-    description: '承接 SmartLabHub 的 Excel 导入、多层表头识别、字段映射、汇总和分析能力。',
+    description: '原样嵌入 SmartLabHub 数据汇总助手 v2.4.0：概览、数据源、字段字典、汇总提取、横向关联、结果分析、报告、导出、AI、设置、钉钉入口和原始编辑。',
     status: '可用',
     action: '进入数据分析',
   },
@@ -227,7 +227,7 @@ onMounted(loadWorkspace)
         </div>
       </section>
 
-      <ImportPreview v-if="activeSection === '数据分析'" />
+      <DataAnalysis v-if="activeSection === '数据分析'" />
 
       <section v-else-if="activeSection !== '工作台'" class="placeholder-view">
         <span class="placeholder-code">MODULE / {{ navigation.find((item) => item.label === activeSection)?.code }}</span>
