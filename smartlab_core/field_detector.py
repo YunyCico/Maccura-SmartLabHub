@@ -38,6 +38,13 @@ def detect_fields(columns: list[str]) -> dict[str, str]:
     return found
 
 
+def detect_business_fields(columns: list[str]) -> dict[str, str]:
+    found = detect_fields(columns)
+    return {role: column for role, column in found.items() if role in {"hospital", "department", "owner", "satisfaction", "time"}}
+
+
 def required_field_warnings(columns: list[str]) -> list[str]:
     found = detect_fields(columns)
+    if {"二级分类", "三级分类", "需求内容"} & set(columns):
+        return [FIELD_LABELS[role] for role in ("hospital", "department", "owner", "satisfaction") if role not in found]
     return [FIELD_LABELS[role] for role in ("time", "module", "project") if role not in found]

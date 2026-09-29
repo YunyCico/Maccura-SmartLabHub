@@ -5,9 +5,11 @@ import re
 from io import BytesIO, StringIO
 from typing import Any
 
+import datetime as dt
+
 import pandas as pd
 
-from .field_detector import detect_fields, required_field_warnings
+from .field_detector import detect_business_fields, detect_fields, required_field_warnings
 from .header_normalizer import normalize_columns
 
 
@@ -35,6 +37,39 @@ def _parse_info_table(rows: list[list[str]]) -> pd.DataFrame:
     return pd.DataFrame(records, columns=["项目", "内容"])
 
 
+def _looks_numeric(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        float(value.replace(",", "").rstrip("%"))
+        return True
+    except ValueError:
+        return False
+
+
+def _looks_date(value: str) -> bool:
+    text = value.strip()
+    if not text:
+        return False
+    patterns = ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S")
+    for pattern in patterns:
+        try:
+            dt.datetime.strptime(text, pattern)
+            return True
+        except ValueError:
+            continue
+    return bool(re.search(r"\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}", text))
+
+
+def _looks_data_row(row: list[str]) -> bool:
+    values = [value for value in row if value]
+    if len(values) < 2:
+        return False
+    numeric_or_date = sum(_looks_numeric(value) or _looks_date(value) for value in values)
+    long_values = sum(len(value) > 20 for value in values)
+    return numeric_or_date >= max(1, len(values) // 4) or long_values >= 2
+
+
 def _header_score(rows: list[list[str]], index: int) -> tuple[int, int, int]:
     current = rows[index]
     width = sum(bool(value) for value in current)
@@ -42,8 +77,18 @@ def _header_score(rows: list[list[str]], index: int) -> tuple[int, int, int]:
         return (0, 0, 0)
     following = rows[index + 1 : index + 4]
     data_rows = sum(sum(bool(value) for value in row) >= 2 for row in following)
-    text_headers = sum(not value.replace(".", "", 1).isdigit() for value in current if value)
+    text_headers = sum(not _looks_numeric(value) for value in current if value)
     return (data_rows, width, text_headers)
+
+
+def _looks_group_header_row(row: list[str]) -> bool:
+    values = [value for value in row if value]
+    if len(values) < 2 or _looks_data_row(row):
+        return False
+
+    unique_count = len(set(values))
+    short_text_count = sum(1 <= len(value) <= 20 and not _looks_numeric(value) and not _looks_date(value) for value in values)
+    return unique_count < len(values) or short_text_count == len(values)
 
 
 def _find_header_rows(rows: list[list[str]]) -> list[int]:
@@ -56,7 +101,12 @@ def _find_header_rows(rows: list[list[str]]) -> list[int]:
     if start + 1 < len(rows):
         first_width = sum(bool(value) for value in rows[start])
         second_width = sum(bool(value) for value in rows[start + 1])
-        if second_width >= max(2, first_width // 2) and _header_score(rows, start + 1)[0] > 0:
+        has_repeated_or_group_value = _looks_group_header_row(rows[start + 1])
+        if (
+            second_width >= max(2, first_width // 2)
+            and _header_score(rows, start + 1)[0] > 0
+            and has_repeated_or_group_value
+        ):
             header_rows.append(start + 1)
     return header_rows
 
@@ -126,6 +176,7 @@ def _sheet_preview(dataframe: pd.DataFrame, sheet_name: str, header_rows: list[i
         "rows": int(dataframe.dropna(how="all").shape[0]),
         "columns": columns,
         "detected_fields": detect_fields(columns),
+        "detected_business_fields": detect_business_fields(columns),
         "warnings": [f"缺少{warning}" for warning in warnings],
         "preview": dataframe.head(5).fillna("").astype(str).to_dict(orient="records"),
     }

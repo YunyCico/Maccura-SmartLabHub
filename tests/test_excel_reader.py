@@ -40,6 +40,10 @@ def test_preview_joins_multi_level_headers_and_detects_report_fields() -> None:
     assert sheet["detected_fields"]["time"] == "基础信息 / 检测完成时间"
     assert sheet["detected_fields"]["module"] == "检测结果 / 模块"
     assert sheet["detected_fields"]["project"] == "检测结果 / 项目名称"
+    assert sheet["detected_business_fields"] == {
+        "hospital": "基础信息 / 医院名称",
+        "time": "基础信息 / 检测完成时间",
+    }
     assert sheet["warnings"] == []
 
 
