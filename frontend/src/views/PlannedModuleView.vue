@@ -26,7 +26,7 @@ const points = computed(() => (route.meta.points as string[]) ?? [])
         <span class="status-dot"></span>
         该模块入口已保留，功能开发完成后将在此页面上线。
       </div>
-      <button class="primary-button" type="button" @click="router.push('/')">返回工作台 <span>↗</span></button>
+      <button class="primary-button" type="button" @click="router.push('/')">返回 SmartLabHub <span>↗</span></button>
     </div>
   </section>
 </template>

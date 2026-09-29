@@ -8,7 +8,7 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: HomeView,
-      meta: { title: '工作台', code: '01' },
+      meta: { title: 'SmartLabHub', code: '01' },
     },
     {
       path: '/data-analysis',

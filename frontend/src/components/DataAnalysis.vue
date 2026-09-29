@@ -36,7 +36,7 @@ onMounted(loadEmbed)
         <h2>数据分析工作台</h2>
       </div>
       <div class="embed-actions">
-        <button class="ghost-button" type="button" @click="router.push('/')">← 工作台</button>
+        <button class="ghost-button" type="button" @click="router.push('/')">← SmartLabHub</button>
         <a v-if="url" class="secondary-button" :href="url" target="_blank" rel="noopener">原窗口打开</a>
         <button class="primary-button" type="button" @click="loadEmbed">重新连接 <span>↻</span></button>
       </div>

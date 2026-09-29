@@ -72,7 +72,7 @@ onMounted(loadWorkspace)
   <section class="dashboard-content">
     <div class="intro-row">
       <div>
-        <p class="section-kicker">今日工作概览</p>
+        <p class="section-kicker">工作概况</p>
         <h2>把数据整理，变成可执行的判断。</h2>
         <p class="intro-copy">集中处理医院上报、服务需求与运营指标，先确认数据，再生成结论。</p>
       </div>

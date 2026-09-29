@@ -1,10 +1,26 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { fetchCurrentUser, fetchDingTalkConfig, type CurrentUser } from './api/user'
+import { resolveDingTalkAuthCode } from './lib/dingtalk'
 
 const route = useRoute()
+const user = ref<CurrentUser | null>(null)
 
-const currentTitle = computed(() => (route.meta.title as string) ?? '工作台')
+const currentTitle = computed(() => (route.meta.title as string) ?? 'SmartLabHub')
+const initials = computed(() => (user.value?.name ? user.value.name.slice(0, 1) : '…'))
+
+async function loadUser() {
+  try {
+    const config = await fetchDingTalkConfig()
+    const code = config.enabled && config.corp_id ? await resolveDingTalkAuthCode(config.corp_id) : null
+    user.value = await fetchCurrentUser(code)
+  } catch {
+    user.value = null
+  }
+}
+
+onMounted(loadUser)
 </script>
 
 <template>
@@ -16,10 +32,11 @@ const currentTitle = computed(() => (route.meta.title as string) ?? '工作台')
       </div>
       <div class="user-block">
         <div class="user-copy">
-          <span>本地管理员</span>
-          <small>department_admin</small>
+          <span>{{ user?.name ?? '识别中…' }}</span>
+          <small>{{ user?.role ?? 'department_admin' }}</small>
         </div>
-        <div class="avatar">管</div>
+        <img v-if="user?.avatar" class="avatar avatar-img" :src="user.avatar" :alt="user.name" />
+        <div v-else class="avatar">{{ initials }}</div>
       </div>
     </header>
 
