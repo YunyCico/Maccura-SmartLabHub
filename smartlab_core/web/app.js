@@ -2612,6 +2612,23 @@ function setupAnDsControls() {
     if (cb.checked) S.anDs.add(cb.dataset.id); else S.anDs.delete(cb.dataset.id);
   };
 }
+/* ★ 勾选数据表 → 直接驱动下方分析：把勾选映射到汇总状态；无结果时点分析自动先生成 */
+async function ensureResultFromSelection() {
+  if (S.lastResult && S.lastResult.id) return true;
+  const ids = S.anDs || new Set();
+  if (!ids.size) return false;
+  S.picked = new Set();
+  S.datasets.forEach(d => { if (ids.has(d.id)) (d.sheets || []).forEach(s => S.picked.add(d.id + '||' + s.name)); });
+  S.outFields = (S.fields || []).map(f => f.key);
+  S.outSet = new Set(S.outFields);
+  renderMapping();
+  const tip = $('#an-run-tip');
+  if (tip) tip.textContent = '正在按勾选的数据表生成分析结果…';
+  await runUnion();
+  if (tip) tip.textContent = '勾选数据表后，点下方任一分析即自动生成结果';
+  return !!(S.lastResult && S.lastResult.id);
+}
+
 /* ★ TAT 分析：对当前结果计算 结束时间−开始时间 的时长统计（只读） */
 function tatFill(cols) {
   const s = $('#tat-start'), e = $('#tat-end'), g = $('#tat-group');
@@ -2643,8 +2660,11 @@ function tatFmt(h) {
   return h < 48 ? h.toFixed(1) + ' 小时' : (h / 24).toFixed(1) + ' 天';
 }
 async function tatRun() {
+  if (!(S.lastResult && S.lastResult.id)) {
+    const ok = await ensureResultFromSelection();
+    if (!ok) return toast('请先勾选要分析的数据表，或从「结果分析」下拉选择历史结果', 'err');
+  }
   const rid = S.lastResult && S.lastResult.id;
-  if (!rid) return toast('请先生成或选择一个分析结果', 'err');
   const start = $('#tat-start').value, end = $('#tat-end').value, group = $('#tat-group').value;
   const btn = $('#tat-run'); btn.disabled = true; btn.textContent = '计算中…';
   try {
@@ -3032,7 +3052,11 @@ function rpGatherOpts() {
 }
 
 async function rpRun() {
-  if (!S.rp.id || !S.rp.pick) return;
+  if (!S.rp.id || !S.rp.pick) {
+    // 没结果时：勾选了数据表就自动生成一份，再接着出设备负载报告
+    const ok = await ensureResultFromSelection();
+    if (!ok || !S.rp.id) return toast('请先勾选要分析的数据表，或从「结果分析」下拉选择历史结果', 'err');
+  }
   const btn = $('#rp-run');
   btn.disabled = true;
   $('#rp-loading').style.display = '';
