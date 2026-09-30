@@ -2582,7 +2582,7 @@ async function applyPickedResult(rid) {
   } catch (e) { toast('读取该结果失败：' + (e && e.message ? e.message : e), 'err'); }
 }
 
-/* ★ 独立「数据分析」页：导入新数据 / 勾选已导入数据表 → 直接生成结果并分析 */
+/* ★ 独立「数据分析」页：勾选数据表供汇总提取使用；TAT / 设备负载常驻 */
 if (!S.anDs) S.anDs = new Set();      // 勾选状态跨渲染 / 切页保留；默认不勾选
 function anDsVisible() {
   const kw = ($('#an-ds-kw') ? $('#an-ds-kw').value : '').trim().toLowerCase();
@@ -2612,51 +2612,6 @@ function setupAnDsControls() {
     if (cb.checked) S.anDs.add(cb.dataset.id); else S.anDs.delete(cb.dataset.id);
   };
 }
-async function uploadFiles2(files) {
-  if (!files.length) return;
-  const btn = $('#btn-choose2'); if (btn) { btn.disabled = true; btn.textContent = '导入中…'; }
-  const payload = [];
-  for (const f of files) {
-    const buf = await f.arrayBuffer();
-    let bin = '';
-    const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i += 8192)
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-    payload.push({ name: f.name, data: btoa(bin) });
-  }
-  try {
-    const r = await api('/api/import_upload', { files: payload });
-    toast(`导入完成：成功 ${r.added.length} 个${r.errors.length ? '，失败 ' + r.errors.length + ' 个' : ''}`, r.errors.length ? 'err' : 'ok');
-    await loadAll();
-    renderAnDatasets();
-  } catch (e) { toast('导入失败：' + e.message, 'err'); }
-  if (btn) { btn.disabled = false; btn.textContent = '选择文件导入'; }
-}
-function setupImport2() {
-  const drop = $('#drop2'); if (!drop) return;
-  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', e => {
-    const fs = Array.from(e.dataTransfer.files || []).filter(f => /\.(xlsx|xlsm|csv)$/i.test(f.name));
-    if (!fs.length) return toast('请拖入 .xlsx / .xlsm / .csv 文件', 'err');
-    uploadFiles2(fs);
-  });
-  $('#btn-choose2').onclick = () => $('#file-input2').click();
-  $('#file-input2').onchange = e => { uploadFiles2(Array.from(e.target.files)); e.target.value = ''; };
-}
-async function runAnalysisFromDatasets() {
-  const ids = S.anDs || new Set();
-  if (!ids.size) return toast('请先勾选至少一个数据表', 'err');
-  S.picked = new Set();
-  S.datasets.forEach(d => { if (ids.has(d.id)) (d.sheets || []).forEach(s => S.picked.add(d.id + '||' + s.name)); });
-  S.outFields = (S.fields || []).map(f => f.key);
-  S.outSet = new Set(S.outFields);
-  renderMapping();
-  const tip = $('#an-run-tip'); if (tip) tip.textContent = '正在生成分析结果…';
-  await runUnion();
-  if (tip) tip.textContent = '将按字段字典自动映射并联合汇总所选数据表';
-}
-
 /* ★ TAT 分析：对当前结果计算 结束时间−开始时间 的时长统计（只读） */
 function tatFill(cols) {
   const s = $('#tat-start'), e = $('#tat-end'), g = $('#tat-group');
@@ -3393,21 +3348,22 @@ function nav(p) {
     }).catch(() => { /* 静默：拿不到就保持旧渲染 */ });
   }
   if (p === 'analysis') {
-    // 结果分析 / 设备负载面板常驻本页（从汇总提取页迁移过来，DOM 移动不丢状态）
+    // 面板常驻本页（从汇总提取页迁移过来，DOM 移动不丢状态）：
+    // 顺序固定为 结果分析 → TAT → 设备负载；设备负载无论有无结果都常显示
     const host = $('#page-analysis');
-    const an = $('#analysis-card'), rp = $('#report-card'), tc = $('#tat-card');
-    if (host && an && an.parentElement !== host) host.appendChild(an);
-    if (host && rp && rp.parentElement !== host) host.appendChild(rp);
-    if (host && tc) host.appendChild(tc);   // TAT 卡固定排在最后
+    const an = $('#analysis-card'), tc = $('#tat-card'), rp = $('#report-card');
+    if (host && an) host.appendChild(an);
+    if (host && tc) host.appendChild(tc);
+    if (host && rp) host.appendChild(rp);
     renderAnDatasets();
     loadResultPicker();
-    // ★ 设备负载 / TAT 常显示：没有结果时也亮出来并给出引导
     if (tc) tc.style.display = 'block';
-    if (!S.lastResult) {
-      if (rp) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; }
-    } else {
-      tatFill(S.lastResult.cols);
+    if (rp) {
+      rp.style.display = 'block';
+      const rb = $('#rp-badge');
+      if (!S.lastResult && rb) rb.textContent = '暂无结果';
     }
+    if (S.lastResult) tatFill(S.lastResult.cols);
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -3424,10 +3380,8 @@ function updateLabOptions() { /* 预留：实验室下拉 */ }
 
 /* ---------------- 启动 ---------------- */
 setupImport();
-setupImport2();
 setupAnDsControls();
-const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = runAnalysisFromDatasets;
-const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => clearResult();
+const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => { clearResult(); const rp = $('#report-card'); if (rp && $('#page-analysis').classList.contains('active')) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; } };
 const __tatRun = $('#tat-run'); if (__tatRun) __tatRun.onclick = () => tatRun();
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
