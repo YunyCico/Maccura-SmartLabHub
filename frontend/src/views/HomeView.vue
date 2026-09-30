@@ -137,42 +137,5 @@ onMounted(loadWorkspace)
       </div>
     </section>
 
-    <div class="lower-grid">
-      <section class="panel task-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">ANALYSIS REPORTS</p>
-            <h3>分析报表</h3>
-          </div>
-          <button class="text-button" type="button" @click="router.push('/data-analysis')">查看全部 <span>↗</span></button>
-        </div>
-        <div v-if="summary.recent_tasks.length === 0" class="empty-state">
-          <div class="empty-mark">—</div>
-          <strong>还没有分析报表</strong>
-          <p>上传第一份 Excel 并完成汇总后，生成的报表会显示在这里。</p>
-          <button class="primary-button" type="button" @click="router.push('/data-analysis')">开始导入 <span>↗</span></button>
-        </div>
-        <div v-else class="task-list">
-          <div v-for="task in summary.recent_tasks" :key="String(task.id)" class="task-row">
-            <span class="task-type">XLS</span>
-            <div class="task-copy"><strong>{{ task.filename }}</strong><p>{{ task.rows }} 行 · {{ task.sheets }} 个工作表</p></div>
-            <span class="task-status">{{ task.status }}</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel quality-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">DATA QUALITY</p>
-            <h3>数据质量提醒</h3>
-          </div>
-          <span class="quality-count">{{ summary.pending_import_count }} 项</span>
-        </div>
-        <div class="quality-item"><span class="quality-icon neutral">01</span><div><strong>待导入文件</strong><p>等待下一批医院月度数据</p></div><span class="quality-state">空闲</span></div>
-        <div class="quality-item"><span class="quality-icon neutral">02</span><div><strong>字段映射</strong><p>统一处理多层表头与 Unnamed 列</p></div><span class="quality-state">规则</span></div>
-        <div class="quality-item"><span class="quality-icon accent">03</span><div><strong>人工确认</strong><p>正式写入前保留用户确认节点</p></div><span class="quality-state accent-text">必需</span></div>
-      </section>
-    </div>
   </section>
 </template>
