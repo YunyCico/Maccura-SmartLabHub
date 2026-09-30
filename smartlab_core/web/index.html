@@ -52,8 +52,15 @@
             <input type="file" id="file-input2" accept=".xlsx,.xlsm,.csv" multiple style="display:none">
           </div>
         </div>
-        <div class="toolbar" style="margin-top:16px"><div class="tl">② 或勾选已导入的数据表</div></div>
-        <div class="picklist" id="an-ds-list" style="max-height:260px"></div>
+        <div class="toolbar" style="margin-top:16px">
+          <div class="tl">② 或勾选已导入的数据表</div>
+          <div class="tr">
+            <input type="text" id="an-ds-kw" class="search" placeholder="搜索文件名 / 实验室 / 类型…" style="width:220px">
+            <button class="btn small" id="an-ds-all">全部勾选</button>
+            <button class="btn small" id="an-ds-none">清空</button>
+          </div>
+        </div>
+        <div class="picklist" id="an-ds-list" style="max-height:300px"></div>
         <div class="actions">
           <button class="btn primary big" id="btn-an-run">生成分析结果</button>
           <span class="tip" id="an-run-tip">将按字段字典自动映射并联合汇总所选数据表</span>

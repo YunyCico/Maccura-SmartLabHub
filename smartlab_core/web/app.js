@@ -2565,14 +2565,34 @@ async function applyPickedResult(rid) {
 }
 
 /* ★ 独立「数据分析」页：导入新数据 / 勾选已导入数据表 → 直接生成结果并分析 */
+if (!S.anDs) S.anDs = new Set();      // 勾选状态跨渲染 / 切页保留；默认不勾选
+function anDsVisible() {
+  const kw = ($('#an-ds-kw') ? $('#an-ds-kw').value : '').trim().toLowerCase();
+  let list = S.datasets || [];
+  if (kw) list = list.filter(d => ((d.name || '') + (d.lab || '') + (d.table_type || '')).toLowerCase().includes(kw));
+  return list;
+}
 function renderAnDatasets() {
   const box = $('#an-ds-list'); if (!box) return;
   if (!S.datasets.length) { box.innerHTML = '<div class="empty sm">还没有数据表，可先在上方导入</div>'; return; }
-  box.innerHTML = S.datasets.map(d => `<label class="pick" style="cursor:pointer">
-      <input type="checkbox" class="an-ds" data-id="${esc(d.id)}" checked style="margin-top:3px">
+  const list = anDsVisible();
+  if (!list.length) { box.innerHTML = '<div class="empty sm">没有匹配的数据表</div>'; return; }
+  box.innerHTML = list.map(d => `<label class="pick" style="cursor:pointer">
+      <input type="checkbox" class="an-ds" data-id="${esc(d.id)}" ${S.anDs.has(d.id) ? 'checked' : ''} style="margin-top:3px">
       <div class="pi"><div class="pn">${esc(d.name)}</div>
-      <div class="ps">${(d.sheets || []).length} 个工作表 · ${Number(d.total_rows || 0).toLocaleString()} 行</div></div>
+      <div class="ps"><span class="tag">${esc(d.lab || '未标注')}</span><span class="tag o">${esc(d.table_type || '未标注')}</span>
+      ${(d.sheets || []).length} 个工作表 · ${Number(d.total_rows || 0).toLocaleString()} 行</div></div>
     </label>`).join('');
+}
+function setupAnDsControls() {
+  const kw = $('#an-ds-kw'); if (kw) kw.oninput = () => renderAnDatasets();
+  const all = $('#an-ds-all'); if (all) all.onclick = () => { anDsVisible().forEach(d => S.anDs.add(d.id)); renderAnDatasets(); };
+  const none = $('#an-ds-none'); if (none) none.onclick = () => { S.anDs.clear(); renderAnDatasets(); };
+  const box = $('#an-ds-list');
+  if (box) box.onchange = e => {
+    const cb = e.target.closest('.an-ds'); if (!cb) return;
+    if (cb.checked) S.anDs.add(cb.dataset.id); else S.anDs.delete(cb.dataset.id);
+  };
 }
 async function uploadFiles2(files) {
   if (!files.length) return;
@@ -2607,7 +2627,7 @@ function setupImport2() {
   $('#file-input2').onchange = e => { uploadFiles2(Array.from(e.target.files)); e.target.value = ''; };
 }
 async function runAnalysisFromDatasets() {
-  const ids = new Set($$('#an-ds-list .an-ds:checked').map(i => i.dataset.id));
+  const ids = S.anDs || new Set();
   if (!ids.size) return toast('请先勾选至少一个数据表', 'err');
   S.picked = new Set();
   S.datasets.forEach(d => { if (ids.has(d.id)) (d.sheets || []).forEach(s => S.picked.add(d.id + '||' + s.name)); });
@@ -3312,6 +3332,7 @@ function updateLabOptions() { /* 预留：实验室下拉 */ }
 /* ---------------- 启动 ---------------- */
 setupImport();
 setupImport2();
+setupAnDsControls();
 const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = runAnalysisFromDatasets;
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
