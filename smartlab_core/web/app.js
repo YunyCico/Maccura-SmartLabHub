@@ -2629,6 +2629,27 @@ async function ensureResultFromSelection(force) {
   return !!(S.lastResult && S.lastResult.id);
 }
 
+/* 快捷场景：键 → [开始列关键词(按序匹配), 结束列关键词]。点按钮自动选列并计算 */
+const TAT_PRESETS = {
+  cj:   { label: '采集-签收', start: ['采集时间', '采样时间', '采集'], end: ['签收时间', '接收时间', '签收'] },
+  qs:   { label: '签收-核收', start: ['签收时间', '接收时间', '签收'], end: ['核收时间', '核收'] },
+  hbg:  { label: '核收-报告', start: ['核收时间', '核收'], end: ['检测完成时间', '报告时间', '报告'] },
+  bgsh: { label: '报告-审核', start: ['检测完成时间', '报告时间', '报告'], end: ['审核时间', '审核'] },
+};
+function tatPresetRun(key) {
+  const p = TAT_PRESETS[key]; if (!p) return;
+  const s = $('#tat-start'), e = $('#tat-end');
+  const tl = Array.from(s.options).map(o => o.value);
+  const find = (kws) => { for (const k of kws) { const hit = tl.find(c => c.includes(k)); if (hit) return hit; } return ''; };
+  const sc = find(p.start), ec = find(p.end);
+  if (!sc || !ec || sc === ec) {
+    return toast(`「${p.label}」需要的时间列不全（${p.start[0]} / ${p.end[0]}），请检查数据或手动选择`, 'err');
+  }
+  s.value = sc; e.value = ec;
+  $$('#tat-presets .btn').forEach(b => b.classList.toggle('on', b.dataset.pre === key));
+  tatRun();
+}
+
 /* ★ TAT 分析：对当前结果计算 结束时间−开始时间 的时长统计（只读） */
 function tatFill(cols) {
   const s = $('#tat-start'), e = $('#tat-end'), g = $('#tat-group');
@@ -3406,8 +3427,16 @@ function updateLabOptions() { /* 预留：实验室下拉 */ }
 setupImport();
 setupAnDsControls();
 const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = async () => { const ok = await ensureResultFromSelection(true); if (!ok) toast('请先勾选至少一个数据表', 'err'); };
-const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => { clearResult(); const rp = $('#report-card'); if (rp && $('#page-analysis').classList.contains('active')) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; } };
+const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => { clearResult(); const rp = $('#report-card'); if (rp && $('#page-analysis').classList.contains('active')) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; } $$('#tat-presets .btn').forEach(b => b.classList.remove('on')); };
+['#tat-start', '#tat-end'].forEach(sel => { const el = $(sel); if (el) el.onchange = () => $$('#tat-presets .btn').forEach(b => b.classList.remove('on')); });
 const __tatRun = $('#tat-run'); if (__tatRun) __tatRun.onclick = () => tatRun();
+$$('#tat-presets .btn').forEach(b => b.onclick = async () => {
+  if (!(S.lastResult && S.lastResult.id)) {
+    const ok = await ensureResultFromSelection();
+    if (!ok) return toast('请先勾选要分析的数据表，或从「结果分析」下拉选择历史结果', 'err');
+  }
+  tatPresetRun(b.dataset.pre);
+});
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
 // 自检：页面里每个 btn-* 按钮都必须绑好点击事件。
