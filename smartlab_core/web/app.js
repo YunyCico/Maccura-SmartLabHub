@@ -2613,8 +2613,8 @@ function setupAnDsControls() {
   };
 }
 /* ★ 勾选数据表 → 直接驱动下方分析：把勾选映射到汇总状态；无结果时点分析自动先生成 */
-async function ensureResultFromSelection() {
-  if (S.lastResult && S.lastResult.id) return true;
+async function ensureResultFromSelection(force) {
+  if (!force && S.lastResult && S.lastResult.id) return true;
   const ids = S.anDs || new Set();
   if (!ids.size) return false;
   S.picked = new Set();
@@ -3405,6 +3405,7 @@ function updateLabOptions() { /* 预留：实验室下拉 */ }
 /* ---------------- 启动 ---------------- */
 setupImport();
 setupAnDsControls();
+const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = async () => { const ok = await ensureResultFromSelection(true); if (!ok) toast('请先勾选至少一个数据表', 'err'); };
 const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => { clearResult(); const rp = $('#report-card'); if (rp && $('#page-analysis').classList.contains('active')) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; } };
 const __tatRun = $('#tat-run'); if (__tatRun) __tatRun.onclick = () => tatRun();
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
