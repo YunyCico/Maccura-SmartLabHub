@@ -2421,6 +2421,7 @@ function showResult(r, cols) {
   renderResultPage();
   anStart(r.columns);          // v2.0.0：同时准备「结果分析」（数据概览 + 数据透视）
   rpStart(r.result_id, r.columns);   // v2.1.0：同时准备「分析报告」（模板清单 + 可用性）
+  loadResultPicker(r.result_id);     // 同步历史结果下拉，保证分析/报告可独立切换
   $('#result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 async function renderResultPage() {
@@ -2538,6 +2539,30 @@ function anBlank() {
 }
 
 /* 清空并收起整个分析区（「清除结果」时调用） */
+/* ★ 独立使用：结果分析 / 分析报告 不必先跑汇总，可直接选历史结果（含重启前生成的） */
+async function loadResultPicker(preferId) {
+  const sel = $('#an-pick'); if (!sel) return;
+  try {
+    const r = await api('/api/results');
+    const list = r.results || [];
+    const cur = preferId || (S.lastResult && S.lastResult.id) || (list[0] && list[0].id) || '';
+    sel.innerHTML = list.length
+      ? list.map(x => `<option value="${esc(x.id)}">${esc(x.title)} · ${Number(x.rows || 0).toLocaleString()} 行 · ${new Date((x.at || 0) * 1000).toLocaleString('zh-CN')}</option>`).join('')
+      : '<option value="">（暂无历史结果）</option>';
+    sel.value = cur;
+    sel.disabled = !list.length;
+    if (!S.lastResult && list.length) await applyPickedResult(cur);
+  } catch (e) { /* 静默：拿不到清单就保持现状 */ }
+}
+async function applyPickedResult(rid) {
+  if (!rid) return;
+  try {
+    const r = await api(`/api/result?id=${encodeURIComponent(rid)}&offset=0&size=1`);
+    showResult({ result_id: rid, columns: r.columns, total: r.total, detail: [] }, r.columns);
+    const sel = $('#an-pick'); if (sel) sel.value = rid;
+  } catch (e) { toast('读取该结果失败：' + (e && e.message ? e.message : e), 'err'); }
+}
+
 function anReset() {
   S.an = anBlank();
   const hide = ['#analysis-card', '#an-body', '#an-loading', '#an-fail'];
@@ -3198,6 +3223,7 @@ function nav(p) {
   $$('.page').forEach(s => s.classList.toggle('active', s.id === 'page-' + p));
   if (p === 'build') {
     renderBuild();                       // 先按当前数据立刻渲染，界面不空
+    loadResultPicker();                  // 结果分析/报告可独立选历史结果
     const seq = ++__buildSyncSeq;
     loadAll().then(() => {
       if (seq !== __buildSyncSeq) return;   // 期间又切走了，丢弃这次结果
@@ -3208,6 +3234,7 @@ function nav(p) {
 }
 // ★ 只给带 data-page 的导航项绑定切页；「使用说明」是外链 <a href>，不能拦（否则会调 nav(undefined)）
 $$('.nav a').forEach(a => { if (a.dataset.page) a.onclick = () => nav(a.dataset.page); });
+const __anPick = $('#an-pick'); if (__anPick) __anPick.onchange = () => applyPickedResult(__anPick.value);
 
 function renderBuild() {
   renderPickList(); renderFieldList(); renderMapping(); renderFilters();

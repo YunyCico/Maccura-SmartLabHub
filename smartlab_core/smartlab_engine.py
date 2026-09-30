@@ -1637,6 +1637,23 @@ def result_count():
         return len(_results)
 
 
+def result_list():
+    """历史汇总结果清单（内存池，含启动时从磁盘读回的），供界面独立选择分析/出报告"""
+    out = []
+    for rid, rec in _results.items():
+        meta = rec.get("meta") or {}
+        out.append({
+            "id": rid,
+            "title": meta.get("title") or "汇总结果",
+            "mode": meta.get("mode") or "",
+            "rows": len(rec.get("rows") or []),
+            "cols": len(rec.get("columns") or []),
+            "at": rec.get("at") or 0,
+        })
+    out.sort(key=lambda x: x["at"], reverse=True)
+    return out
+
+
 def load_persisted_results():
     """启动时把磁盘上最近的结果读回内存，让老页面上的导出按钮继续可用"""
     n = 0
@@ -4037,6 +4054,8 @@ class Handler(BaseHTTPRequestHandler):
                 "merges": merges,        # 合并单元格（A1 记法），供前端做视觉提示
                 "truncated": offset + len(page) < total,
             })
+        if p == "/api/results":
+            return self._json({"ok": True, "results": result_list()})
         if p == "/api/result":
             rid = (q.get("id") or [""])[0]
             offset = int((q.get("offset") or ["0"])[0])
