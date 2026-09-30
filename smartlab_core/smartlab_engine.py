@@ -35,7 +35,7 @@ from urllib.parse import urlparse, parse_qs, quote
 APP_VERSION = "2.4.0"
 # 表头/信息表识别规则的版本号。改动识别逻辑时把它 +1，
 # 老索引会在下次启动时自动按新规则重算（用户不用重新导入数据）。
-RECOGNIZE_VERSION = 3
+RECOGNIZE_VERSION = 4   # v4：丢弃"重复表头且整列无数据"的模板残留列（消除 _2 幽灵字段）
 
 # ---------------------------------------------------------------- 基础路径
 def _base_dir():
@@ -47,7 +47,9 @@ LIB_DIR = os.path.join(DATA_DIR, "library")
 SRC_DIR = os.path.join(LIB_DIR, "sources")
 OUT_DIR = os.path.join(DATA_DIR, "exports")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-INDEX_FILE = os.path.join(LIB_DIR, "index.json")
+def _index_file():
+    return os.path.join(LIB_DIR, "index.json")
+INDEX_FILE = _index_file()  # 兼容旧引用；实际读写走 _index_file()
 RESULT_DIR = os.path.join(LIB_DIR, "results")
 REPORT_DIR = os.path.join(DATA_DIR, "reports")
 # v2.3.0「保存并替换原文件」的自动备份目录。
@@ -165,9 +167,9 @@ STATE = {"version": 1, "datasets": [], "config": json.loads(json.dumps(DEFAULT_C
 
 def load_state():
     global STATE
-    if os.path.exists(INDEX_FILE):
+    if os.path.exists(_index_file()):
         try:
-            with open(INDEX_FILE, "r", encoding="utf-8") as f:
+            with open(_index_file(), "r", encoding="utf-8") as f:
                 data = json.load(f)
             cfg = json.loads(json.dumps(DEFAULT_CONFIG))
             cfg.update(data.get("config") or {})
@@ -247,10 +249,10 @@ def library_health():
 
 def save_state():
     with _lock:
-        tmp = INDEX_FILE + ".tmp"
+        tmp = _index_file() + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(STATE, f, ensure_ascii=False, indent=2)
-        shutil.move(tmp, INDEX_FILE)
+        shutil.move(tmp, _index_file())
 
 
 def get_config(public=True):
@@ -562,9 +564,19 @@ def build_table(path, sheet_name, header_rows="1"):
             keep.append(c)
 
     # 表头去重（同时保留一份"纯表头"的名字，供字段字典使用）
+    # ★ 重复表头且整列无数据的列（模板残留空列）直接丢弃，不再产生 _2 幽灵字段；
+    #   有数据的重复列仍保留并加 _2 后缀，绝不丢真数据。
+    empty_cols = set()
+    for c in range(ncol):
+        if not any((r[c] if c < len(r) else "") not in ("", None) for r in body):
+            empty_cols.add(c)
     final, base_final, seen, seen_base = [], [], {}, {}
+    keep2 = []
     for c in keep:
         name = enriched[c].strip() or ("列%d" % (c + 1))
+        bn = (raw_names[c].strip() if c < len(raw_names) else "") or ("列%d" % (c + 1))
+        if (name in seen or bn in seen_base) and c in empty_cols:
+            continue
         if name in seen:
             seen[name] += 1
             name = "%s_%d" % (name, seen[name])
@@ -572,16 +584,17 @@ def build_table(path, sheet_name, header_rows="1"):
             seen[name] = 1
         final.append(name)
         # 纯表头：不含程序为了提示拼上去的「（说明）」
-        bn = (raw_names[c].strip() if c < len(raw_names) else "") or ("列%d" % (c + 1))
         if bn in seen_base:
             seen_base[bn] += 1
             bn = "%s_%d" % (bn, seen_base[bn])
         else:
             seen_base[bn] = 1
         base_final.append(bn)
+        keep2.append(c)
 
     columns = final
     base_columns = base_final
+    keep = keep2
     records = [[(r[c] if c < len(r) else "") for c in keep] for r in body]
 
     # 说明行没有并进来的话，至少让用户能从表头看到后面还有内容
