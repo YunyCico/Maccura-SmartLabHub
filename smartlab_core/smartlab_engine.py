@@ -1033,6 +1033,14 @@ def refresh_metadata(force=False):
         p = ds_abs_path(ds)
         if not os.path.isfile(p):
             continue
+        if ds.get("large"):
+            try:
+                st0 = os.stat(p)
+                ds["src_mtime"] = st0.st_mtime
+                ds["src_size"] = st0.st_size
+            except OSError:
+                pass
+            continue
         try:
             names = sheet_names(p)
         except Exception:
@@ -1110,7 +1118,18 @@ def import_file(path, copy=True, lab="", table_type="", header_rows=None, displa
     shutil.copy2(path, stored_abs)
 
     sheets_meta = []
+    large_file = size > LARGE_FILE_BYTES
     for sn in sheet_names(stored_abs):
+        if large_file:
+            # ★ 大文件流式导入：逐行写进专属 SQLite，不整表进内存
+            try:
+                sm = _import_sheet_stream(stored_abs, sn, ds_id)
+                sheets_meta.append(sm)
+            except Exception as e:
+                traceback.print_exc()
+                sheets_meta.append({"name": sn, "header_rows": "1", "rows": 0,
+                                    "columns": [], "signature": "", "error": str(e)})
+            continue
         try:
             rows = cached_raw(stored_abs, sn)
         except Exception as e:
@@ -1156,6 +1175,7 @@ def import_file(path, copy=True, lab="", table_type="", header_rows=None, displa
         "src_path": os.path.abspath(path),
         "size": size,
         "imported_at": now_str(),
+        "large": any(s.get("large") for s in sheets_meta),
         "lab": lab or guess_lab(show_name, cfg.get("labs") or []),
         "table_type": table_type or guess_table_type(show_name),
         "note": "",
@@ -1179,6 +1199,10 @@ def ds_abs_path(ds):
 
 
 def reparse_dataset(ds):
+    if ds.get("large"):
+        # 大表元数据在导入时已流式算好；重解析=重新流式全表扫描，代价过大，直接跳过
+        return ds
+
     """重新解析一个**已存在**的数据集，把 ds["sheets"] / size 刷新成文件的当前状态。
 
     为什么需要它 —— v2.3.0 起了「保存并替换原文件」：编辑结果会真的写回
@@ -1299,6 +1323,9 @@ def delete_fields(keys, dataset_ids=None):
     for ds in STATE["datasets"]:
         if scope and ds["id"] not in scope:
             continue
+        if ds.get("large"):
+            errors.append("%s：大表暂不支持字段删除，请在 Excel 里删好后重新导入" % ds.get("name"))
+            continue
         pth = ds_abs_path(ds)
         for sh in ds.get("sheets", []):
             name = sh.get("name")
@@ -1398,6 +1425,9 @@ def source_table(ds, sheet_name, header_rows, kind="auto"):
     if sh is None:
         raise ValueError("工作表不存在：%s" % sheet_name)
     hr = str(header_rows or sh.get("header_rows") or "1")
+    # ★ 大表：数据在专属 SQLite 里，这里只返回结构视图（records 为 None）
+    if ds.get("large"):
+        return _large_table(ds, sh)
     # 信息表模式：按"标签|内容"提取，或自动判断为信息表
     if kind == "info":
         return build_info_table(p, sheet_name)
@@ -1474,6 +1504,8 @@ def aggregate(req):
 
 def aggregate_union(req, by_id, fields, filters, add_src, dedup, sort, limit):
     out_fields = list(fields)
+    large_used = False
+    truncated = False
     if add_src:
         for extra in ("来源实验室", "来源文件", "来源工作表"):
             if extra in out_fields:
@@ -1498,6 +1530,43 @@ def aggregate_union(req, by_id, fields, filters, add_src, dedup, sort, limit):
         if not mapping:
             mapping = auto_mapping(t["columns"], fields)
         pos = {c: i for i, c in enumerate(t["columns"])}
+
+        # ★ 大表：从 SQLite 分批流式读取，边读边聚合，内存只保留 ≤上限 的结果行
+        if t.get("large"):
+            large_used = True
+            used = 0
+            sh_l = next((x for x in ds.get("sheets", []) if x["name"] == s.get("sheet")), None)                 or (ds.get("sheets") or [{}])[0]
+            try:
+                for r in _large_rows_iter(ds, sh_l):
+                    if filters:
+                        if not apply_filters([r], t["columns"], filters):
+                            continue
+                    used += 1
+                    o = {}
+                    for sc, tc in mapping.items():
+                        if tc in out_fields and sc in pos and pos[sc] < len(r):
+                            v = r[pos[sc]]
+                            if v != "" or not tc in o:
+                                o[tc] = v
+                    if add_src:
+                        o["来源实验室"] = ds.get("lab", "") or "-"
+                        o["来源文件"] = ds["name"]
+                        o["来源工作表"] = s.get("sheet")
+                    rows.append([o.get(f, "") for f in out_fields])
+                    if limit and len(rows) >= limit:
+                        truncated = True
+                        break
+            finally:
+                pass
+            detail.append({
+                "dataset_id": ds["id"], "dataset": ds["name"], "lab": ds.get("lab", ""),
+                "sheet": s.get("sheet"), "used_rows": used, "total_rows": t["rows"],
+                "columns": t["columns"], "mapping": mapping, "large": True,
+            })
+            if truncated:
+                break
+            continue
+
         sub = apply_filters(t["records"], t["columns"], filters)
         detail.append({
             "dataset_id": ds["id"], "dataset": ds["name"], "lab": ds.get("lab", ""),
@@ -1532,9 +1601,10 @@ def aggregate_union(req, by_id, fields, filters, add_src, dedup, sort, limit):
     elif mode_sort_default(req):
         pass
 
-    truncated = False
-    if limit and len(rows) > limit:
-        rows = rows[:limit]
+    # ★ 大表兜底封顶：未显式限行时也最多保留 MAX_RESULT_ROWS 行
+    cap = limit or (MAX_RESULT_ROWS if large_used else 0)
+    if cap and len(rows) > cap:
+        rows = rows[:cap]
         truncated = True
 
     return {"columns": out_fields, "rows": rows, "detail": detail, "skipped": skipped,
@@ -1722,6 +1792,181 @@ def result_count():
         return len([f for f in os.listdir(RESULT_DIR) if f.endswith(".json.gz")])
     except Exception:
         return len(_results)
+
+
+# ---------------- 大表模式（>100MB 的 xlsx 流式导入 SQLite，避免整表进内存） ----------------
+LARGE_FILE_BYTES = 100 * 1024 * 1024
+LARGE_SAMPLE_ROWS = 60
+LARGE_MAX_COLS = 300
+
+
+def _ds_db_path(ds, sh=None):
+    rel = (sh or {}).get("dbfile") or ds.get("dbfile") or ""
+    return os.path.join(LIB_DIR, rel)
+
+
+def _import_sheet_stream(stored_abs, sn, ds_id):
+    """大表专用：逐行流式读 xlsx，写入该数据集专属 SQLite，永不整表进内存。
+    表头识别用前 60 行快照；列的保留/去重规则与 build_table 一致
+    （表头非空或整列有数据才保留；重复表头且整列为空的模板残留列丢弃）。"""
+    import sqlite3
+    db_rel = os.path.join("db", "%s_%s.db" % (ds_id, re.sub(r"[^A-Za-z0-9_-]", "_", sn)))
+    db_abs = os.path.join(LIB_DIR, db_rel)
+    os.makedirs(os.path.dirname(db_abs), exist_ok=True)
+    if os.path.exists(db_abs):
+        os.remove(db_abs)
+    con = sqlite3.connect(db_abs)
+    import openpyxl
+    wb = openpyxl.load_workbook(stored_abs, read_only=True, data_only=True)
+    try:
+        ws = wb[sn]
+        ncols = 0
+        total = 0
+        snapshot = []
+        nonempty = {}
+        buf = []
+        table_ready = False
+
+        def ensure_cols(n):
+            nonlocal ncols, table_ready
+            if n > ncols:
+                if not table_ready:
+                    con.execute("CREATE TABLE data (%s)" % ",".join("c%d TEXT" % i for i in range(n)))
+                    table_ready = True
+                else:
+                    for i in range(ncols, n):
+                        con.execute("ALTER TABLE data ADD COLUMN c%d TEXT" % i)
+                # 已缓冲的行补齐新列
+                for bi, row in enumerate(buf):
+                    buf[bi] = tuple(row) + ("",) * (n - len(row))
+                ncols = n
+
+        def flush():
+            if buf:
+                con.executemany("INSERT INTO data VALUES (%s)" % ",".join("?" * ncols), buf)
+                buf.clear()
+
+        for r in ws.iter_rows(values_only=True):
+            vals = [("" if v is None else str(v)) for v in r[:LARGE_MAX_COLS]]
+            if not any(vals):
+                continue                      # 整行空白直接跳过
+            ensure_cols(max(1, len(vals)))
+            vals = (vals + [""] * ncols)[:ncols]
+            total += 1
+            if len(snapshot) < LARGE_SAMPLE_ROWS:
+                snapshot.append(vals)
+            for c, v in enumerate(vals):
+                if v:
+                    nonempty[c] = True
+            buf.append(tuple(vals))
+            if len(buf) >= 5000:
+                flush()
+        flush()
+        con.commit()
+    finally:
+        wb.close()
+
+    hr = detect_header_block(snapshot, fallback=1)
+    hdr_idx = [i - 1 for i in parse_header_spec(hr)]
+    hdr_idx = [i for i in hdr_idx if 0 <= i < len(snapshot)] or [0]
+    raw_names = build_header(snapshot, hdr_idx)
+    skip = max(hdr_idx) + 1
+
+    # ★ 正文列非空标记：从 SQLite 全量行里扫（跳过表头行），保证 keep 规则与全表一致
+    nonempty = {}
+    cur = con.execute("SELECT * FROM data")
+    ridx = 0
+    while True:
+        batch = cur.fetchmany(5000)
+        if not batch:
+            break
+        for r in batch:
+            ridx += 1
+            if ridx <= skip:
+                continue
+            for c, v in enumerate(r):
+                if v:
+                    nonempty[c] = True
+
+    keep, columns, base_columns = [], [], []
+    seen, seen_base = {}, {}
+    for c in range(ncols):
+        bn_raw = (raw_names[c].strip() if c < len(raw_names) else "")
+        if not bn_raw and c not in nonempty:
+            continue                            # 表头空且整列无数据
+        nm = bn_raw or ("列%d" % (c + 1))
+        dup = nm in seen or bn_raw in seen_base
+        if dup and c not in nonempty:
+            continue                            # 重复表头且整列无数据 → 模板残留
+        if nm in seen:
+            seen[nm] += 1
+            nm = "%s_%d" % (nm, seen[nm])
+        else:
+            seen[nm] = 1
+        columns.append(nm)
+        if bn_raw in seen_base:
+            seen_base[bn_raw] += 1
+            bn = "%s_%d" % (bn_raw, seen_base[bn_raw])
+        else:
+            seen_base[bn_raw] = 1
+            bn = bn_raw
+        base_columns.append(bn)
+        keep.append(c)
+
+    collist = ",".join("c%d" % k for k in keep)
+    sample = [list(r) for r in con.execute(
+        "SELECT %s FROM data WHERE rowid > ? LIMIT 3" % collist, (skip,))]
+    data_rows = con.execute(
+        "SELECT COUNT(*) FROM data WHERE rowid > ?" % " ", (skip,)).fetchone()[0] if False else         con.execute("SELECT COUNT(*) FROM data WHERE rowid > ?", (skip,)).fetchone()[0]
+    con.close()
+    return {
+        "name": sn, "kind": "table", "header_rows": hr, "rows": data_rows,
+        "columns": columns, "base_columns": base_columns,
+        "signature": "|".join(sorted(norm(c) for c in columns if norm(c))),
+        "sample": sample,
+        "large": True, "dbfile": db_rel.replace("\\", "/"), "keep": keep,
+        "skip_rows": skip,
+    }
+
+
+def _large_table(ds, sh):
+    """大表工作表的"表结构"视图：有列名/行数/keep，无 records（数据在 SQLite 里）。"""
+    return {
+        "columns": sh.get("columns") or [],
+        "base_columns": sh.get("base_columns") or sh.get("columns") or [],
+        "rows": sh.get("rows") or 0,
+        "records": None,
+        "large": True,
+        "keep": sh.get("keep") or [],
+        "dbfile": sh.get("dbfile") or "",
+    }
+
+
+def _large_rows_iter(ds, sh, chunk=10000):
+    import sqlite3
+    con = sqlite3.connect(_ds_db_path(ds, sh))
+    keep = sh.get("keep") or []
+    collist = ",".join("c%d" % k for k in keep)
+    cur = con.execute("SELECT %s FROM data WHERE rowid > ?" % collist, (sh.get("skip_rows") or 0,))
+    while True:
+        batch = cur.fetchmany(chunk)
+        if not batch:
+            break
+        for r in batch:
+            yield list(r)
+    con.close()
+
+
+def _large_page(ds, sh, offset, size):
+    import sqlite3
+    con = sqlite3.connect(_ds_db_path(ds, sh))
+    keep = sh.get("keep") or []
+    collist = ",".join("c%d" % k for k in keep)
+    rows = con.execute(
+        "SELECT %s FROM data WHERE rowid > ? LIMIT ? OFFSET ?" % collist,
+        (sh.get("skip_rows") or 0, size, max(0, offset))).fetchall()
+    con.close()
+    return [list(r) for r in rows]
 
 
 def result_list():
@@ -2644,6 +2889,8 @@ def raw_preview_edit(dataset_id, sheet, offset, size):
     ds = next((d for d in STATE["datasets"] if d["id"] == dataset_id), None)
     if not ds:
         raise ValueError("数据集不存在")
+    if ds.get("large"):
+        raise ValueError("大表暂不支持在线编辑：请在 Excel 里改好后重新导入")
     pth = ds_abs_path(ds)
     all_names = sheet_names(pth)
     # ★ 被删掉的子表不再出现在标签条里 —— 这就是"删子表"的可见效果
@@ -2750,6 +2997,8 @@ def raw_edit_apply(dataset_id, sheet, ops):
     ds = next((d for d in STATE["datasets"] if d["id"] == dataset_id), None)
     if not ds:
         raise ValueError("数据集不存在")
+    if ds.get("large"):
+        raise ValueError("大表暂不支持在线编辑：请在 Excel 里改好后重新导入")
     pth = ds_abs_path(ds)
     # ★ 校验用「还活着的」工作表：已经被删掉的子表不能再往里写编辑
     if not sheet or sheet not in _live_sheets(dataset_id, pth):
@@ -3157,6 +3406,8 @@ def raw_edit_save(dataset_id, sheet="", backup=True):
         ds = next((d for d in STATE["datasets"] if d["id"] == dataset_id), None)
         if not ds:
             raise ValueError("数据集不存在")
+        if ds.get("large"):
+            raise ValueError("大表暂不支持回写保存：请在 Excel 里改好后重新导入")
         dst = ds_abs_path(ds)
         if not os.path.isfile(dst):
             raise ValueError("原始文件已不在（可能被手工删了）：%s" % ds.get("name"))
@@ -4172,6 +4423,12 @@ class Handler(BaseHTTPRequestHandler):
             if not sn:
                 sn = ds["sheets"][0]["name"]
             t = source_table(ds, sn, hr, q.get("kind", ["auto"])[0])
+            if t.get("large"):
+                sh = next((x for x in ds.get("sheets", []) if x["name"] == sn), None) or (ds.get("sheets") or [{}])[0]
+                page = _large_page(ds, sh, 0, 500)
+                return self._json({"ok": True, "columns": t["columns"],
+                                   "rows": page[:500], "total": t["rows"],
+                                   "large": True, "kind": "table"})
             return self._json({"ok": True, "columns": t["columns"],
                                "rows": t["records"][:80], "total": t["rows"]})
         if p == "/api/raw_preview":
@@ -4200,6 +4457,20 @@ class Handler(BaseHTTPRequestHandler):
             size = int((q.get("size") or ["100"])[0])
             size = max(1, min(size, MAX_PAGE_ROWS))
             offset = max(0, int((q.get("offset") or ["0"])[0]))
+
+            # ★ 大表：从专属 SQLite 分页，绝不 cached_raw 整表进内存
+            if ds.get("large"):
+                sh = next((s for s in ds.get("sheets", []) if s["name"] == sn), None)
+                if sh is None:
+                    raise ValueError("工作表不存在：%s" % sn)
+                page = _large_page(ds, sh, offset, size)
+                total = sh.get("rows") or 0
+                return self._json({
+                    "rows": page, "sheets": [s["name"] for s in ds.get("sheets", [])],
+                    "sheet": sn, "offset": offset, "size": size,
+                    "total": total, "cols": len(sh.get("columns") or []),
+                    "large": True, "editable": False,
+                })
 
             all_rows = cached_raw(pth, sn)
             total = len(all_rows)
@@ -4471,6 +4742,13 @@ class Handler(BaseHTTPRequestHandler):
                         os.remove(fp)
                 except Exception as e:
                     print("删除文件失败：", e)
+                # ★ 大表模式：连专属 SQLite 一起删
+                try:
+                    dbp = _ds_db_path(ds, (ds.get("sheets") or [{}])[0])
+                    if ds.get("large") and os.path.isfile(dbp):
+                        os.remove(dbp)
+                except Exception as e:
+                    print("删除大表数据库失败：", e)
                 STATE["datasets"].remove(ds)
                 removed.append(i)
             _cache.clear()

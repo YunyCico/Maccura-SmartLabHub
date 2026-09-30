@@ -1289,11 +1289,10 @@ function setupImport() {
 }
 async function uploadFiles(files) {
   if (!files.length) return;
-  // 预检：超大文件提前说明，避免"点了没反应像卡死"
-  const MAX_MB = 200;
-  const tooBig = files.filter(f => f.size > MAX_MB * 1024 * 1024);
-  if (tooBig.length) {
-    return toast(`文件超过 ${MAX_MB}MB（${tooBig.map(f => f.name).join('、')}），请先拆分或转存后再导入`, 'err');
+  // 预检：超大文件允许导入（走流式大表模式），但提前说明耗时
+  const big = files.filter(f => f.size > 100 * 1024 * 1024);
+  if (big.length) {
+    toast(`大文件（${big.map(f => f.name).join('、')}）将走流式导入，可能需要几分钟，请勿关闭页面`, 'ok');
   }
   const btn = $('#btn-choose');
   btn.innerHTML = '<span class="spin"></span>导入中…';

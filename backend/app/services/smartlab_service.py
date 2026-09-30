@@ -174,6 +174,13 @@ def dataset_delete(ids: list[str], delete_files: bool = True) -> dict[str, Any]:
                     Path(path).unlink(missing_ok=True)
                 except Exception:
                     pass
+                # 大表模式：连专属 SQLite 一起删
+                try:
+                    dbp = engine._ds_db_path(dataset, (dataset.get("sheets") or [{}])[0])
+                    if dataset.get("large") and os.path.isfile(dbp):
+                        os.remove(dbp)
+                except Exception:
+                    pass
         else:
             remaining.append(dataset)
     engine.STATE["datasets"] = remaining
@@ -194,9 +201,14 @@ def preview(dataset_id: str, sheet: str) -> dict[str, Any]:
     if dataset is None:
         raise ValueError("数据源不存在")
     table = engine.source_table(dataset, sheet, None, "auto")
+    rows = table.get("records")
+    if rows is None and table.get("large"):
+        sh = next((s for s in dataset.get("sheets", []) if s.get("name") == sheet), None) or \
+             (dataset.get("sheets") or [{}])[0]
+        rows = engine._large_page(dataset, sh, 0, 500)
     return {
         "columns": table.get("columns", []),
-        "rows": table.get("records", [])[:500],
+        "rows": (rows or [])[:500],
         "total": table.get("rows", 0),
     }
 
