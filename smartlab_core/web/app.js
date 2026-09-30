@@ -3351,6 +3351,7 @@ setupImport();
 setupImport2();
 setupAnDsControls();
 const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = runAnalysisFromDatasets;
+const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => clearResult();
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
 // 自检：页面里每个 btn-* 按钮都必须绑好点击事件。
