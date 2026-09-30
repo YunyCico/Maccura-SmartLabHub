@@ -2680,6 +2680,51 @@ function tatFmt(h) {
   if (h === null || h === undefined) return '—';
   return h < 48 ? h.toFixed(1) + ' 小时' : (h / 24).toFixed(1) + ' 天';
 }
+/* ★ TAT 结果导出：KPI / 时长分布 / 分组统计 三段 CSV（浏览器本地生成，不动数据） */
+function tatExport() {
+  const r = S.tatLast;
+  if (!r || !r.stats) return toast('还没有可导出的 TAT 结果，请先计算', 'err');
+  const st = r.stats;
+  const rows = [];
+  rows.push(['TAT 分析', `${r.end} − ${r.start}${r.group ? '（按 ' + r.group + ' 分组）' : ''}`]);
+  rows.push([]);
+  rows.push(['指标', '数值']);
+  rows.push(['有效样本', st.valid]);
+  rows.push(['无法解析/负值', st.invalid]);
+  rows.push(['平均 TAT（小时）', st.avg_h]);
+  rows.push(['中位数（小时）', st.median_h]);
+  rows.push(['P90（小时）', st.p90_h]);
+  rows.push(['最短（小时）', st.min_h]);
+  rows.push(['最长（小时）', st.max_h]);
+  rows.push([]);
+  rows.push(['时长分布', '样本数', '占比(%)']);
+  (r.dist || []).forEach(d => rows.push([d.label, d.count, d.pct]));
+  if (r.groups && r.groups.length) {
+    rows.push([]);
+    rows.push([`按 ${r.group} 分组`, '样本数', '平均(小时)', '中位数(小时)', 'P90(小时)', '最长(小时)']);
+    r.groups.forEach(g => rows.push([g.name, g.n, g.avg_h, g.median_h, g.p90_h, g.max_h]));
+  }
+  const csv = '\ufeff' + rows.map(row => row.map(c => {
+    const s = String(c === null || c === undefined ? '' : c);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `TAT分析_${r.start}_${r.end}_${stamp}.csv`.replace(/[\\/:*?"<>|]/g, '_');
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('TAT 分析已导出为 CSV', 'ok');
+}
+/* ★ TAT 清除：收起结果、恢复默认提示（不动数据与结果池） */
+function tatClear() {
+  S.tatLast = null;
+  $('#tat-body').innerHTML = '';
+  $('#tat-badge').textContent = '—';
+  $$('#tat-presets .btn').forEach(b => b.classList.remove('on'));
+  const tip = $('#tat-tip');
+  if (tip) tip.textContent = '周转时间 = 结束时间 − 开始时间；用于查看检测流程各环节耗时分布。';
+  toast('已清除 TAT 分析结果', 'ok');
+}
 async function tatRun() {
   if (!(S.lastResult && S.lastResult.id)) {
     const ok = await ensureResultFromSelection();
@@ -2690,6 +2735,7 @@ async function tatRun() {
   const btn = $('#tat-run'); btn.disabled = true; btn.textContent = '计算中…';
   try {
     const r = await api('/api/tat', { result_id: rid, start, end, group });
+    S.tatLast = r;            // 存起来供「导出」使用
     const st = r.stats || {};
     $('#tat-badge').textContent = st.valid ? `${Number(st.valid).toLocaleString()} 例` : '无有效数据';
     const kpi = (l, v) => `<div class="kpi"><div class="kv">${esc(v)}</div><div class="kl">${esc(l)}</div></div>`;
@@ -2703,7 +2749,7 @@ async function tatRun() {
     if (r.dist && r.dist.length) {
       const mx = Math.max(...r.dist.map(d => d.count), 1);
       html += '<h2>时长分布</h2><div class="bars">' + r.dist.map(d =>
-        `<div class="bar"><span class="bn">${esc(d.label)}</span><span class="bt"><i class="bf" style="width:${Math.round(d.count * 100 / mx)}%"></i></span><span class="bv">${d.count}（${d.pct}%）</span></div>`).join('') + '</div>';
+        `<div class="bar"><span class="bn">${esc(d.label)}</span><span class="bt"><i class="bf" style="display:block;height:100%;width:${Math.round(d.count * 100 / mx)}%"></i></span><span class="bv">${d.count}（${d.pct}%）</span></div>`).join('') + '</div>';
     }
     if (r.groups && r.groups.length > 1) {
       html += '<h2>按 ' + esc(r.group) + ' 分组</h2><div class="tablewrap"><table class="grid"><thead><tr>'
@@ -3430,6 +3476,8 @@ const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = async () => { c
 const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => { clearResult(); const rp = $('#report-card'); if (rp && $('#page-analysis').classList.contains('active')) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; } $$('#tat-presets .btn').forEach(b => b.classList.remove('on')); };
 ['#tat-start', '#tat-end'].forEach(sel => { const el = $(sel); if (el) el.onchange = () => $$('#tat-presets .btn').forEach(b => b.classList.remove('on')); });
 const __tatRun = $('#tat-run'); if (__tatRun) __tatRun.onclick = () => tatRun();
+const __tatExport = $('#tat-export'); if (__tatExport) __tatExport.onclick = () => tatExport();
+const __tatClear = $('#tat-clear'); if (__tatClear) __tatClear.onclick = () => tatClear();
 $$('#tat-presets .btn').forEach(b => b.onclick = async () => {
   if (!(S.lastResult && S.lastResult.id)) {
     const ok = await ensureResultFromSelection();
