@@ -8,6 +8,7 @@ const route = useRoute()
 const user = ref<CurrentUser | null>(null)
 
 const currentTitle = computed(() => (route.meta.title as string) ?? 'SmartLabHub')
+const isHome = computed(() => route.path === '/')
 const initials = computed(() => (user.value?.name ? user.value.name.slice(0, 1) : '…'))
 
 async function loadUser() {
@@ -41,7 +42,7 @@ onMounted(loadUser)
     </header>
 
     <main class="workspace">
-      <header class="topbar">
+      <header v-if="isHome" class="topbar">
         <h1>{{ currentTitle }}</h1>
       </header>
 
