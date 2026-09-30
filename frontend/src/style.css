@@ -23,14 +23,14 @@ button { font: inherit; }
 #app { min-height: 100vh; }
 .app-shell { display: flex; flex-direction: column; min-height: 100vh; background: var(--bg); }
 
-.brand-bar { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 0 22px; height: 52px; background: rgba(255,255,255,.8); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid rgba(0,0,0,.06); }
-.brand-lockup { display: flex; align-items: baseline; gap: 10px; }
-.brand-maccura { color: var(--maccura); font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; font-size: 21px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
-.brand-subtitle { color: var(--muted); font-size: 12px; }
-.user-block { display: flex; align-items: center; gap: 10px; }
-.user-copy { display: grid; justify-items: end; gap: 2px; font-size: 12px; font-weight: 500; color: var(--ink); }
-.user-copy small { color: var(--muted); font-size: 10px; font-weight: 400; }
-.avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); font-size: 13px; font-weight: 600; }
+.brand-bar { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 0 clamp(20px, 2vw, 48px); height: clamp(60px, 3vw, 84px); background: rgba(255,255,255,.8); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid rgba(0,0,0,.06); }
+.brand-lockup { display: flex; align-items: baseline; gap: 14px; }
+.brand-maccura { color: var(--maccura); font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; font-size: clamp(22px, 1.5vw, 32px); font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.brand-subtitle { color: var(--muted); font-size: clamp(11px, .7vw, 15px); }
+.user-block { display: flex; align-items: center; gap: 12px; }
+.user-copy { display: grid; justify-items: end; gap: 3px; font-size: clamp(12px, .7vw, 14px); font-weight: 500; color: var(--ink); }
+.user-copy small { color: var(--muted); font-size: clamp(10px, .55vw, 12px); font-weight: 400; }
+.avatar { width: clamp(34px, 2vw, 46px); height: clamp(34px, 2vw, 46px); display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); font-size: clamp(13px, .8vw, 17px); font-weight: 600; }
 .avatar-img { object-fit: cover; background: #fff; }
 
 .workspace { flex: 1; width: 100%; max-width: 2000px; margin: 0 auto; padding: 0 40px 80px; }
