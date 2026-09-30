@@ -41,7 +41,6 @@ h1 { margin: 12px 0 0; color: var(--ink); font-size: clamp(29px, 3vw, 42px); fon
 .dashboard-content { padding-top: 43px; }
 .intro-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; margin-bottom: 32px; }
 .intro-row h2 { max-width: 600px; margin: 10px 0 9px; color: var(--ink); font-size: clamp(23px, 2.4vw, 34px); font-weight: 600; letter-spacing: -.045em; line-height: 1.18; }
-.intro-copy { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .date-stamp { min-width: 130px; padding: 10px 0 4px; border-top: 2px solid var(--blue); color: var(--ink); }
 .date-label { display: block; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .1em; }
 .date-stamp strong { display: block; margin-top: 8px; font-size: 16px; font-weight: 600; }

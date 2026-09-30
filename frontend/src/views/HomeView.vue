@@ -73,7 +73,6 @@ onMounted(loadWorkspace)
     <div class="intro-row">
       <div>
         <h2>工作概况</h2>
-        <p class="intro-copy">集中处理医院上报、服务需求与运营指标，先确认数据，再生成结论。</p>
       </div>
       <div class="date-stamp">
         <span class="date-label">工作区状态</span>
