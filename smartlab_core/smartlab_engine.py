@@ -594,7 +594,8 @@ def build_table(path, sheet_name, header_rows="1"):
             records = []
 
     res = {"columns": columns, "base_columns": base_columns,
-           "records": records, "rows": len(records), "note_rows": note_rows}
+           "records": records, "rows": len(records), "note_rows": note_rows,
+           "keep": keep}
     _cache[key] = res
     return res
 
@@ -1276,7 +1277,7 @@ def delete_fields(keys, dataset_ids=None):
     走 raw_edit 覆盖层 + 回写原文件（自动备份），再重解析，字典随之更新。
     dataset_ids 传入时只处理这些数据集（用于隔离测试 / 定向清理）。
     """
-    keys = set(k for k in (keys or []) if k)
+    keys = set(norm(k) for k in (keys or []) if k)
     if not keys:
         raise ValueError("没有要删除的字段")
     scope = set(dataset_ids) if dataset_ids else None
@@ -1302,19 +1303,17 @@ def delete_fields(keys, dataset_ids=None):
                         ops.append({"t": "row", "r": r})
             else:
                 hr = max(1, int(sh.get("header_rows") or 1))
-                ncols = max((len(row) for row in rows[:hr]), default=0)
-                for c in range(ncols):
-                    parts = []
-                    for h in range(hr):
-                        if c < len(rows[h]):
-                            txt = cell_to_text(rows[h][c]).strip()
-                            if txt:
-                                parts.append(txt)
-                    if not parts:
-                        continue
-                    disp = " ".join(parts)
-                    if norm(disp) in keys or norm(parts[-1]) in keys:
-                        ops.append({"t": "col", "c": c})
+                try:
+                    t = build_table(pth, name, hr)
+                except Exception:
+                    continue
+                keep = t.get("keep") or []
+                base = t.get("base_columns") or []
+                for i, bn in enumerate(base):
+                    if i >= len(keep):
+                        break
+                    if norm(str(bn)) in keys:
+                        ops.append({"t": "col", "c": keep[i]})
             if not ops:
                 continue
             raw_edit_apply(ds["id"], name, ops)
