@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap');
+
+/* Premium (ivory / charcoal / champagne-gold) theme overlay for the embedded
+   SmartLabHub UI. Original look preserved in style.css (untouched) and backed
+   up under ../../backup/smartlabhub_web_original/; remove this <link> to revert. */
+:root {
+  --blue: #201d1a;
+  --blue-d: #000000;
+  --blue-deep: #000000;
+  --blue-l: rgba(168, 135, 79, .1);
+  --blue-l2: #f1ede4;
+  --blue-l3: #efeae0;
+  --orange: #a8874f;
+  --orange-d: #8f7140;
+  --ink: #1c1a17;
+  --ink2: #4a463f;
+  --ink3: #8a857c;
+  --line: #e5dfd2;
+  --line2: #efeae0;
+  --bg: #f6f4ef;
+  --card: #fffdf8;
+  --red: #a3312a;
+  --green: #3f7d54;
+  --radius: 16px;
+  --radius-s: 12px;
+  --sh1: 0 1px 2px rgba(28, 26, 23, .05);
+  --sh2: 0 6px 18px rgba(28, 26, 23, .07);
+  --sh3: 0 22px 44px rgba(28, 26, 23, .12);
+  --ring: 0 0 0 3px rgba(168, 135, 79, .2);
+}
+
+body {
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, .kv, .brand::before { font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif; }
+
+/* 侧边栏：炭墨 + 象牙字 + 香槟金指示 */
+.side { background: #17181a; color: #e9e5dc; border-right: 0; }
+.side::before, .side::after { display: none; }
+.brandlogo { display: none; }
+.brand::before { content: "maccura"; color: #f2efe7; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.brandrule { background: rgba(168, 135, 79, .5); }
+.btitle { color: #f2efe7; }
+.bsub { color: #d8b878; }
+.borg { color: rgba(242, 239, 231, .5); }
+.nav a { color: #b9b4a9; border-radius: 10px; }
+.nav a:hover { background: rgba(255, 255, 255, .06); color: #f2efe7; }
+.nav a.active { background: rgba(168, 135, 79, .16); color: #d8b878; font-weight: 600; }
+.nav a.active::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 2px; height: 18px; border-radius: 2px; background: #d8b878; }
+.nav a.navhelp::before { background: rgba(255, 255, 255, .12); }
+.sidefoot { border-top: 1px solid rgba(255, 255, 255, .1); color: rgba(242, 239, 231, .5); }
+.stat-mini span { color: #d8b878; }
+.sfhelp, .sfver { color: rgba(242, 239, 231, .45); }
+
+/* 标题与卡片 */
+h1 { color: var(--ink); font-weight: 600; letter-spacing: .02em; }
+h1::after { display: none; }
+.page > h1::before { background: var(--orange); }
+.page > h1::after { background: var(--line); }
+h2 { color: var(--ink); font-weight: 600; }
+h2::before { background: var(--orange); }
+.lead { color: var(--ink2); }
+.card { border: 1px solid rgba(28, 26, 23, .14); border-radius: var(--radius); background: var(--card); box-shadow: var(--sh1); }
+.kpi { border-left: 0; text-align: center; }
+.kpi::before, .kpi::after { display: none; }
+.kv { color: var(--ink); font-weight: 600; }
+.kl { color: var(--ink3); letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+
+/* 按钮：炭墨胶囊 + 金链接 */
+.btn { border-radius: 999px; border-color: rgba(28, 26, 23, .18); color: var(--ink2); }
+.btn:hover { border-color: var(--orange); color: var(--orange); background: var(--blue-l); }
+.btn.primary { background: var(--blue); border-color: var(--blue); color: #f2efe7; }
+.btn.primary:hover { background: var(--blue-d); border-color: var(--blue-d); color: #fff; }
+.btn.small, .btn.big { border-radius: 999px; }
+.btn.ghost { color: var(--ink2); }
+.btn.ghost:hover { background: var(--blue-l); color: var(--orange); }
+.btn.danger { color: var(--red); border-color: rgba(163, 49, 42, .35); }
+.btn.danger:hover { background: rgba(163, 49, 42, .08); border-color: var(--red); color: var(--red); }
+
+/* 表单与上传 */
+input[type=text], input.search, input[type=password], input[type=number], textarea, select, .pathrow input {
+  border-radius: 12px; border-color: var(--line); background: #fff;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--orange); box-shadow: var(--ring); }
+input[type=checkbox], input[type=radio] { accent-color: var(--orange); }
+.drop { border: 1.5px dashed rgba(168, 135, 79, .5); border-radius: var(--radius); background: var(--blue-l2); }
+.drop.over { background: var(--blue-l); border-color: var(--orange); }
+.drop-ico { color: var(--orange); }
+
+/* 徽标 / 标签 / 代码 */
+.badge { background: var(--orange); border-radius: 999px; }
+.toolbar .tl { color: var(--ink); }
+.tag { background: var(--blue-l); color: var(--orange-d); border-radius: 6px; }
+code { background: var(--blue-l2); color: var(--orange-d); border-radius: 6px; }
+.sigtag.ok { background: rgba(63, 125, 84, .12); color: var(--green); }
+.sigtag.warn { background: rgba(168, 135, 79, .14); color: var(--orange-d); }
+
+/* 表格 */
+.tablewrap { border: 1px solid rgba(28, 26, 23, .14); border-radius: var(--radius-s); background: #fff; box-shadow: var(--sh1); }
+table.grid th { background: var(--blue-l2); color: var(--ink3); font-weight: 600; }
+table.grid td { border-bottom: 1px solid var(--line2); }
+table.grid tbody tr:hover { background: var(--blue-l2); }
+
+/* 条形图 / 分组 / 选择列表 */
+.bar .bt { background: var(--line2); border-radius: 6px; }
+.bar .bf { background: linear-gradient(90deg, #d8b878, #a8874f); border-radius: 6px; }
+.grp { border: 0; border-radius: var(--radius-s); background: var(--blue-l2); }
+.grp .gh { color: var(--ink); }
+.picklist { border: 1px solid rgba(28, 26, 23, .14); border-radius: var(--radius-s); box-shadow: var(--sh1); }
+.pick:hover { background: var(--blue-l2); }
+.pick.on { background: var(--blue-l); }
+.pschip { background: var(--blue-l); color: var(--orange-d); border-radius: 999px; }
+.pschip b { color: var(--orange-d); }
+.pstool .ps-scope.on { background: var(--blue); border-color: var(--blue); color: #f2efe7; }
+.steps b { color: var(--orange-d); }
+.resultcard::before { background: linear-gradient(90deg, #d8b878, #a8874f); }
