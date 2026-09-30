@@ -47,9 +47,9 @@ onMounted(loadUser)
       </header>
 
       <RouterView v-slot="{ Component }">
-        <transition name="page-fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
+        <keep-alive>
+          <component :is="Component" :key="route.path" />
+        </keep-alive>
       </RouterView>
     </main>
   </div>
