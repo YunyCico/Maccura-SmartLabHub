@@ -2439,6 +2439,7 @@ function showResult(r, cols) {
   renderResultPage();
   anStart(r.columns);          // v2.0.0：同时准备「结果分析」（数据概览 + 数据透视）
   rpStart(r.result_id, r.columns);   // v2.1.0：同时准备「分析报告」（模板清单 + 可用性）
+  tatFill(r.columns);          // TAT 分析：预选时间列
   loadResultPicker(r.result_id);     // 同步历史结果下拉，保证分析/报告可独立切换
   $('#result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -2654,6 +2655,73 @@ async function runAnalysisFromDatasets() {
   const tip = $('#an-run-tip'); if (tip) tip.textContent = '正在生成分析结果…';
   await runUnion();
   if (tip) tip.textContent = '将按字段字典自动映射并联合汇总所选数据表';
+}
+
+/* ★ TAT 分析：对当前结果计算 结束时间−开始时间 的时长统计（只读） */
+function tatFill(cols) {
+  const s = $('#tat-start'), e = $('#tat-end'), g = $('#tat-group');
+  if (!s || !e) return;
+  const list = cols || [];
+  const opt = list.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  s.innerHTML = opt; e.innerHTML = opt;
+  g.innerHTML = '<option value="">不分组</option>' + opt;
+  // 只在"时间/日期"类列里猜，避免把"××申请模式"之类的文本列选进来
+  const tl = list.filter(c => /时间|日期/.test(c));
+  const pick = (kws, not) => {
+    for (const k of kws) {
+      const hit = tl.find(c => c.includes(k) && !(not || []).some(n => c.includes(n)));
+      if (hit) return hit;
+    }
+    return '';
+  };
+  const endC = pick(['检测完成', '报告', '审核', '复查完成', '完成'], ['失效']);
+  const startC = pick(['采样', '接收', '采集', '签收', '上机', '申请'], ['完成', '失效', '审核', '报告']);
+  s.value = startC || (tl[0] || ''); e.value = endC || (tl[tl.length - 1] || '');
+  if (list.includes('模块')) g.value = '模块';
+  const tip = $('#tat-tip');
+  if (tip) tip.textContent = list.length
+    ? '周转时间 = 结束时间 − 开始时间；已按列名预选，可自行调整。'
+    : '暂无分析结果：可先在上方生成，或从「结果分析」下拉选择历史结果。';
+}
+function tatFmt(h) {
+  if (h === null || h === undefined) return '—';
+  return h < 48 ? h.toFixed(1) + ' 小时' : (h / 24).toFixed(1) + ' 天';
+}
+async function tatRun() {
+  const rid = S.lastResult && S.lastResult.id;
+  if (!rid) return toast('请先生成或选择一个分析结果', 'err');
+  const start = $('#tat-start').value, end = $('#tat-end').value, group = $('#tat-group').value;
+  const btn = $('#tat-run'); btn.disabled = true; btn.textContent = '计算中…';
+  try {
+    const r = await api('/api/tat', { result_id: rid, start, end, group });
+    const st = r.stats || {};
+    $('#tat-badge').textContent = st.valid ? `${Number(st.valid).toLocaleString()} 例` : '无有效数据';
+    const kpi = (l, v) => `<div class="kpi"><div class="kv">${esc(v)}</div><div class="kl">${esc(l)}</div></div>`;
+    let html = '<div class="cards">'
+      + kpi('有效样本', Number(st.valid || 0).toLocaleString())
+      + kpi('平均 TAT', tatFmt(st.avg_h))
+      + kpi('中位数', tatFmt(st.median_h))
+      + kpi('P90', tatFmt(st.p90_h))
+      + kpi('最长', tatFmt(st.max_h))
+      + '</div>';
+    if (r.dist && r.dist.length) {
+      const mx = Math.max(...r.dist.map(d => d.count), 1);
+      html += '<h2>时长分布</h2><div class="bars">' + r.dist.map(d =>
+        `<div class="bar"><span class="bn">${esc(d.label)}</span><span class="bt"><i class="bf" style="width:${Math.round(d.count * 100 / mx)}%"></i></span><span class="bv">${d.count}（${d.pct}%）</span></div>`).join('') + '</div>';
+    }
+    if (r.groups && r.groups.length > 1) {
+      html += '<h2>按 ' + esc(r.group) + ' 分组</h2><div class="tablewrap"><table class="grid"><thead><tr>'
+        + '<th>分组</th><th>样本数</th><th>平均</th><th>中位数</th><th>P90</th><th>最长</th></tr></thead><tbody>'
+        + r.groups.map(g2 => `<tr><td><b>${esc(g2.name)}</b></td><td>${Number(g2.n).toLocaleString()}</td><td>${tatFmt(g2.avg_h)}</td><td>${tatFmt(g2.median_h)}</td><td>${tatFmt(g2.p90_h)}</td><td>${tatFmt(g2.max_h)}</td></tr>`).join('')
+        + '</tbody></table></div>';
+    }
+    if (st.invalid) html += `<div class="tip" style="margin-top:8px">另有 ${Number(st.invalid).toLocaleString()} 行时间无法解析或为负值，已跳过。</div>`;
+    $('#tat-body').innerHTML = html;
+  } catch (err) {
+    toast('TAT 计算失败：' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '计算';
+  }
 }
 
 function anReset() {
@@ -3325,13 +3393,21 @@ function nav(p) {
     }).catch(() => { /* 静默：拿不到就保持旧渲染 */ });
   }
   if (p === 'analysis') {
-    // 结果分析 / 分析报告面板常驻本页（从汇总提取页迁移过来，DOM 移动不丢状态）
+    // 结果分析 / 设备负载面板常驻本页（从汇总提取页迁移过来，DOM 移动不丢状态）
     const host = $('#page-analysis');
-    const an = $('#analysis-card'), rp = $('#report-card');
+    const an = $('#analysis-card'), rp = $('#report-card'), tc = $('#tat-card');
     if (host && an && an.parentElement !== host) host.appendChild(an);
     if (host && rp && rp.parentElement !== host) host.appendChild(rp);
+    if (host && tc) host.appendChild(tc);   // TAT 卡固定排在最后
     renderAnDatasets();
     loadResultPicker();
+    // ★ 设备负载 / TAT 常显示：没有结果时也亮出来并给出引导
+    if (tc) tc.style.display = 'block';
+    if (!S.lastResult) {
+      if (rp) { rp.style.display = 'block'; const rb = $('#rp-badge'); if (rb) rb.textContent = '暂无结果'; }
+    } else {
+      tatFill(S.lastResult.cols);
+    }
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -3352,6 +3428,7 @@ setupImport2();
 setupAnDsControls();
 const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = runAnalysisFromDatasets;
 const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => clearResult();
+const __tatRun = $('#tat-run'); if (__tatRun) __tatRun.onclick = () => tatRun();
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
 // 自检：页面里每个 btn-* 按钮都必须绑好点击事件。

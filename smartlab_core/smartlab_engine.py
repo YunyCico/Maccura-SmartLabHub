@@ -1741,6 +1741,101 @@ def result_list():
     return out
 
 
+def tat_analyze(columns, rows, start_col, end_col, group_col=""):
+    """TAT（周转时间）分析：结束时间列 − 开始时间列 的时长统计。
+
+    纯读操作，不改任何数据。返回：总体 KPI（均值/中位数/P90/极值，单位小时）、
+    时长分布（分桶）、按分组列（如 模块/项目名称）的分组统计。
+    """
+    from . import report_templates as RT
+
+    cols = list(columns or [])
+    rows = list(rows or [])
+
+    def idx(name):
+        try:
+            return cols.index(name)
+        except ValueError:
+            return -1
+
+    si, ei = idx(start_col), idx(end_col)
+    if si < 0 or ei < 0:
+        raise ValueError("请选择有效的时间列（开始 / 结束）")
+    if si == ei:
+        raise ValueError("开始与结束时间列不能相同")
+    gi = idx(group_col) if group_col else -1
+
+    total = valid = invalid = 0
+    secs, groups = [], {}
+    for r in rows:
+        total += 1
+        sv = RT.parse_datetime(r[si] if si < len(r) else None)[0]
+        ev = RT.parse_datetime(r[ei] if ei < len(r) else None)[0]
+        if not sv or not ev:
+            invalid += 1
+            continue
+        d = (ev - sv).total_seconds()
+        if d < 0:
+            invalid += 1
+            continue
+        valid += 1
+        secs.append(d)
+        g = "未分组"
+        if gi >= 0 and gi < len(r) and r[gi] not in (None, ""):
+            g = str(r[gi])
+        groups.setdefault(g, []).append(d)
+
+    def pct(sorted_secs, p):
+        if not sorted_secs:
+            return None
+        k = min(len(sorted_secs) - 1, max(0, int(round(p * len(sorted_secs))) - 1))
+        return sorted_secs[k]
+
+    ss = sorted(secs)
+    stats = {
+        "total": total,
+        "valid": valid,
+        "invalid": invalid,
+        "avg_h": round(sum(ss) / len(ss) / 3600, 2) if ss else None,
+        "median_h": round(pct(ss, 0.5) / 3600, 2) if ss else None,
+        "p90_h": round(pct(ss, 0.9) / 3600, 2) if ss else None,
+        "min_h": round(ss[0] / 3600, 2) if ss else None,
+        "max_h": round(ss[-1] / 3600, 2) if ss else None,
+    }
+
+    # 时长分布（分桶边界：1h / 2h / 4h / 8h / 24h / 48h）
+    edges = [60, 120, 240, 480, 1440, 2880]
+    labels = ["<1小时", "1-2小时", "2-4小时", "4-8小时", "8-24小时", "1-2天", ">2天"]
+    buckets = [0] * len(labels)
+    for sec in secs:
+        m = sec / 60
+        for i, e in enumerate(edges):
+            if m < e:
+                buckets[i] += 1
+                break
+        else:
+            buckets[-1] += 1
+    dist = [
+        {"label": l, "count": c, "pct": round(c * 100.0 / valid, 1) if valid else 0}
+        for l, c in zip(labels, buckets)
+    ]
+
+    grp_out = []
+    for g, arr in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:30]:
+        a = sorted(arr)
+        grp_out.append({
+            "name": g,
+            "n": len(a),
+            "avg_h": round(sum(a) / len(a) / 3600, 2),
+            "median_h": round(pct(a, 0.5) / 3600, 2),
+            "p90_h": round(pct(a, 0.9) / 3600, 2),
+            "max_h": round(a[-1] / 3600, 2),
+        })
+
+    return {"ok": True, "start": start_col, "end": end_col, "group": group_col,
+            "stats": stats, "dist": dist, "groups": grp_out}
+
+
 def load_persisted_results():
     """启动时把磁盘上最近的结果读回内存，让老页面上的导出按钮继续可用"""
     n = 0
@@ -4609,6 +4704,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/fields/delete":
             return self._json(delete_fields(b.get("keys") or [], b.get("dataset_ids") or None))
+
+        if p == "/api/tat":
+            res = get_result(b.get("result_id") or "")
+            if not res:
+                raise ValueError("结果不存在或已过期，请先生成或选择一个分析结果")
+            return self._json(tat_analyze(
+                res["columns"], res["rows"],
+                b.get("start") or "", b.get("end") or "", b.get("group") or ""))
 
         if p == "/api/raw_edit/preview":
             # 提交改动后拿最新预览（不用再拼一堆查询参数）
