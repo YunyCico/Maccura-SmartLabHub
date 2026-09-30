@@ -1611,6 +1611,22 @@ $('#fd-use').onclick = () => {
 };
 
 /* 横向：用勾选的第一个字段当关联键，跳到横向关联 */
+/* ★ 删除所选字段：同步删除原始表里对应的列（信息表为行），原文件自动备份 */
+$('#fd-del').onclick = async () => {
+  const picked = $$('.fd-check').filter(c => c.checked);
+  if (!picked.length) return toast('先勾选要删除的字段', 'err');
+  const names = picked.map(c => c.dataset.name);
+  if (!confirm('确定删除所选 ' + names.length + ' 个字段吗？\n\n会同步删除原始表里对应的列（信息表为对应行），原文件会自动备份。')) return;
+  try {
+    const r = await api('/api/fields/delete', { keys: names });
+    toast('已删除 ' + (r.deleted || []).length + ' 个字段，涉及 ' + (r.touched || []).length + ' 个工作表', 'ok');
+    await loadAll();
+    renderFields();
+    if (typeof renderAnDatasets === 'function') renderAnDatasets();
+    loadResultPicker();
+  } catch (e) { toast('删除失败：' + e.message, 'err'); }
+};
+
 $('#fd-join').onclick = () => {
   const picked = $$('.fd-check').filter(c => c.checked);
   if (!picked.length) return toast('先勾选一个要当「关联键」的字段', 'err');

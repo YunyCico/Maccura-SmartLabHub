@@ -1023,10 +1023,19 @@ def refresh_metadata(force=False):
             names = sheet_names(p)
         except Exception:
             continue
+        # ★ 源文件被外部改写 / 从备份恢复时（mtime 或大小变化）也要重解析，
+        #   否则索引里还是旧的列结构。
+        try:
+            st = os.stat(p)
+            fp_changed = (ds.get("src_mtime") != st.st_mtime) or (ds.get("src_size") != st.st_size)
+            ds["src_mtime"] = st.st_mtime
+            ds["src_size"] = st.st_size
+        except OSError:
+            fp_changed = False
         if not need_all:
             same_names = [s["name"] for s in ds.get("sheets", [])] == names
             has_kind = all(s.get("kind") for s in ds.get("sheets", []))
-            if same_names and has_kind:
+            if same_names and has_kind and not fp_changed:
                 continue
         old = {s["name"]: s for s in ds.get("sheets", [])}
         new = []
@@ -1257,6 +1266,63 @@ def field_dictionary():
         })
     out.sort(key=lambda x: (-x["dataset_count"], -x["sheet_count"], x["name"]))
     return out
+
+
+def delete_fields(keys, dataset_ids=None):
+    """
+    从字段字典删除字段，并同步删除原始表里对应的数据：
+    · 普通表（table）：删除该字段对应的整列；
+    · 信息表（info，标签|值 结构）：删除该字段对应的整行。
+    走 raw_edit 覆盖层 + 回写原文件（自动备份），再重解析，字典随之更新。
+    dataset_ids 传入时只处理这些数据集（用于隔离测试 / 定向清理）。
+    """
+    keys = set(k for k in (keys or []) if k)
+    if not keys:
+        raise ValueError("没有要删除的字段")
+    scope = set(dataset_ids) if dataset_ids else None
+    touched = []
+    for ds in STATE["datasets"]:
+        if scope and ds["id"] not in scope:
+            continue
+        pth = ds_abs_path(ds)
+        for sh in ds.get("sheets", []):
+            name = sh.get("name")
+            kind = sh.get("kind") or "table"
+            try:
+                rows = cached_raw(pth, name)
+            except Exception:
+                continue
+            if not rows:
+                continue
+            ops = []
+            if kind == "info":
+                for r, row in enumerate(rows):
+                    lab = norm(cell_to_text(row[0]) if row else "")
+                    if lab in keys:
+                        ops.append({"t": "row", "r": r})
+            else:
+                hr = max(1, int(sh.get("header_rows") or 1))
+                ncols = max((len(row) for row in rows[:hr]), default=0)
+                for c in range(ncols):
+                    parts = []
+                    for h in range(hr):
+                        if c < len(rows[h]):
+                            txt = cell_to_text(rows[h][c]).strip()
+                            if txt:
+                                parts.append(txt)
+                    if not parts:
+                        continue
+                    disp = " ".join(parts)
+                    if norm(disp) in keys or norm(parts[-1]) in keys:
+                        ops.append({"t": "col", "c": c})
+            if not ops:
+                continue
+            raw_edit_apply(ds["id"], name, ops)
+            raw_edit_save(ds["id"], name, backup=True)
+            reparse_dataset(ds)
+            touched.append("%s / %s" % (ds.get("name"), name))
+    save_state()
+    return {"ok": True, "deleted": sorted(keys), "touched": touched}
 
 
 # ---------------------------------------------------------------- 汇总引擎
@@ -4519,6 +4585,9 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/raw_edit/apply":
             r = raw_edit_apply(b.get("dataset_id"), b.get("sheet") or "", b.get("ops") or [])
             return self._json(r)
+
+        if p == "/api/fields/delete":
+            return self._json(delete_fields(b.get("keys") or [], b.get("dataset_ids") or None))
 
         if p == "/api/raw_edit/preview":
             # 提交改动后拿最新预览（不用再拼一堆查询参数）
