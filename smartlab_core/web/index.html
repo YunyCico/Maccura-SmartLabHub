@@ -24,6 +24,7 @@
       <a data-page="sources"><i>▣</i>数据源管理</a>
       <a data-page="fields"><i>≣</i>字段字典</a>
       <a data-page="build"><i>∑</i>汇总提取</a>
+      <a data-page="analysis"><i>◔</i>数据分析</a>
       <a data-page="ai"><i>✦</i>AI 助手</a>
       <a data-page="settings"><i>⚙</i>设置</a>
       <a class="navhelp" href="./help.html" target="_blank" rel="noopener"><i>❓</i>使用说明</a>
@@ -38,6 +39,27 @@
   </aside>
 
   <main class="main">
+    <section class="page" id="page-analysis">
+      <h1>数据分析</h1>
+      <p class="lead">直接导入新数据，或勾选已导入的数据表一键生成分析结果；结果分析（数据概览 / 数据透视）与分析报告在此独立完成，也可切换历史结果。</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="toolbar"><div class="tl">① 导入新数据</div></div>
+        <div class="drop" id="drop2" style="padding:22px">
+          <div class="drop-ico">⇪</div>
+          <div class="drop-t">拖入 .xlsx / .xlsm / .csv，或</div>
+          <div class="actions" style="justify-content:center;margin-top:8px">
+            <button class="btn primary" id="btn-choose2">选择文件导入</button>
+            <input type="file" id="file-input2" accept=".xlsx,.xlsm,.csv" multiple style="display:none">
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:16px"><div class="tl">② 或勾选已导入的数据表</div></div>
+        <div class="picklist" id="an-ds-list" style="max-height:260px"></div>
+        <div class="actions">
+          <button class="btn primary big" id="btn-an-run">生成分析结果</button>
+          <span class="tip" id="an-run-tip">将按字段字典自动映射并联合汇总所选数据表</span>
+        </div>
+      </div>
+    </section>
     <!-- ============ 概览 ============ -->
     <section class="page active" id="page-home">
       <h1>概览</h1>

@@ -2344,6 +2344,7 @@ async function runUnion() {
     showResult(r, S.outFields);
     tip.textContent = '';
     toast(`汇总完成：${r.total.toLocaleString()} 行，用时 ${r.elapsed}s`, 'ok');
+    nav('analysis');   // 生成后直接进入「数据分析」查看结果分析与分析报告
   } catch (e) {
     tip.textContent = '';
     showError(e.message);
@@ -2561,6 +2562,61 @@ async function applyPickedResult(rid) {
     showResult({ result_id: rid, columns: r.columns, total: r.total, detail: [] }, r.columns);
     const sel = $('#an-pick'); if (sel) sel.value = rid;
   } catch (e) { toast('读取该结果失败：' + (e && e.message ? e.message : e), 'err'); }
+}
+
+/* ★ 独立「数据分析」页：导入新数据 / 勾选已导入数据表 → 直接生成结果并分析 */
+function renderAnDatasets() {
+  const box = $('#an-ds-list'); if (!box) return;
+  if (!S.datasets.length) { box.innerHTML = '<div class="empty sm">还没有数据表，可先在上方导入</div>'; return; }
+  box.innerHTML = S.datasets.map(d => `<label class="pick" style="cursor:pointer">
+      <input type="checkbox" class="an-ds" data-id="${esc(d.id)}" checked style="margin-top:3px">
+      <div class="pi"><div class="pn">${esc(d.name)}</div>
+      <div class="ps">${(d.sheets || []).length} 个工作表 · ${Number(d.total_rows || 0).toLocaleString()} 行</div></div>
+    </label>`).join('');
+}
+async function uploadFiles2(files) {
+  if (!files.length) return;
+  const btn = $('#btn-choose2'); if (btn) { btn.disabled = true; btn.textContent = '导入中…'; }
+  const payload = [];
+  for (const f of files) {
+    const buf = await f.arrayBuffer();
+    let bin = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 8192)
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    payload.push({ name: f.name, data: btoa(bin) });
+  }
+  try {
+    const r = await api('/api/import_upload', { files: payload });
+    toast(`导入完成：成功 ${r.added.length} 个${r.errors.length ? '，失败 ' + r.errors.length + ' 个' : ''}`, r.errors.length ? 'err' : 'ok');
+    await loadAll();
+    renderAnDatasets();
+  } catch (e) { toast('导入失败：' + e.message, 'err'); }
+  if (btn) { btn.disabled = false; btn.textContent = '选择文件导入'; }
+}
+function setupImport2() {
+  const drop = $('#drop2'); if (!drop) return;
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => {
+    const fs = Array.from(e.dataTransfer.files || []).filter(f => /\.(xlsx|xlsm|csv)$/i.test(f.name));
+    if (!fs.length) return toast('请拖入 .xlsx / .xlsm / .csv 文件', 'err');
+    uploadFiles2(fs);
+  });
+  $('#btn-choose2').onclick = () => $('#file-input2').click();
+  $('#file-input2').onchange = e => { uploadFiles2(Array.from(e.target.files)); e.target.value = ''; };
+}
+async function runAnalysisFromDatasets() {
+  const ids = new Set($$('#an-ds-list .an-ds:checked').map(i => i.dataset.id));
+  if (!ids.size) return toast('请先勾选至少一个数据表', 'err');
+  S.picked = new Set();
+  S.datasets.forEach(d => { if (ids.has(d.id)) (d.sheets || []).forEach(s => S.picked.add(d.id + '||' + s.name)); });
+  S.outFields = (S.fields || []).map(f => f.key);
+  S.outSet = new Set(S.outFields);
+  renderMapping();
+  const tip = $('#an-run-tip'); if (tip) tip.textContent = '正在生成分析结果…';
+  await runUnion();
+  if (tip) tip.textContent = '将按字段字典自动映射并联合汇总所选数据表';
 }
 
 function anReset() {
@@ -3230,6 +3286,15 @@ function nav(p) {
       renderBuild();
     }).catch(() => { /* 静默：拿不到就保持旧渲染 */ });
   }
+  if (p === 'analysis') {
+    // 结果分析 / 分析报告面板常驻本页（从汇总提取页迁移过来，DOM 移动不丢状态）
+    const host = $('#page-analysis');
+    const an = $('#analysis-card'), rp = $('#report-card');
+    if (host && an && an.parentElement !== host) host.appendChild(an);
+    if (host && rp && rp.parentElement !== host) host.appendChild(rp);
+    renderAnDatasets();
+    loadResultPicker();
+  }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 // ★ 只给带 data-page 的导航项绑定切页；「使用说明」是外链 <a href>，不能拦（否则会调 nav(undefined)）
@@ -3245,6 +3310,8 @@ function updateLabOptions() { /* 预留：实验室下拉 */ }
 
 /* ---------------- 启动 ---------------- */
 setupImport();
+setupImport2();
+const __anRun = $('#btn-an-run'); if (__anRun) __anRun.onclick = runAnalysisFromDatasets;
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
 // 自检：页面里每个 btn-* 按钮都必须绑好点击事件。
