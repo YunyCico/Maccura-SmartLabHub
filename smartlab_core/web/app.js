@@ -2875,7 +2875,8 @@ async function rpStart(rid, cols) {
     const r = await api('/api/report/templates', { result_id: S.rp.id });
     // 期间用户可能清了结果
     if (S.rp.id !== ((S.lastResult && S.lastResult.id) || null)) return;
-    S.rp.tpls = r.templates || [];
+    S.rp.tpls = (r.templates || []).filter(t => t.id === 'equip_load');   // 聚焦设备负载分析
+    if (!S.rp.tpls.some(t => t.id === S.rp.pick)) S.rp.pick = 'equip_load';
     rpPaintTpls();
     rpPaintHist(r.reports || []);
     const n = S.rp.tpls.filter(t => !t.check || t.check.ok).length;
