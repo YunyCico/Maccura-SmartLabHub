@@ -1620,6 +1620,7 @@ $('#fd-del').onclick = async () => {
   try {
     const r = await api('/api/fields/delete', { keys: names });
     toast('已删除 ' + (r.deleted || []).length + ' 个字段，涉及 ' + (r.touched || []).length + ' 个工作表', 'ok');
+    if (r.errors && r.errors.length) toast('部分工作表未处理：' + r.errors.join('；'), 'err');
     await loadAll();
     renderFields();
     if (typeof renderAnDatasets === 'function') renderAnDatasets();

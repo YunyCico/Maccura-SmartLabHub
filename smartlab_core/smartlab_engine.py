@@ -1282,6 +1282,7 @@ def delete_fields(keys, dataset_ids=None):
         raise ValueError("没有要删除的字段")
     scope = set(dataset_ids) if dataset_ids else None
     touched = []
+    errors = []
     for ds in STATE["datasets"]:
         if scope and ds["id"] not in scope:
             continue
@@ -1291,7 +1292,8 @@ def delete_fields(keys, dataset_ids=None):
             kind = sh.get("kind") or "table"
             try:
                 rows = cached_raw(pth, name)
-            except Exception:
+            except Exception as ex:
+                errors.append("%s / %s：读取失败 %s" % (ds.get("name"), name, ex))
                 continue
             if not rows:
                 continue
@@ -1305,7 +1307,10 @@ def delete_fields(keys, dataset_ids=None):
                 hr = max(1, int(sh.get("header_rows") or 1))
                 try:
                     t = build_table(pth, name, hr)
-                except Exception:
+                except Exception as ex:
+                    # ★ 不再静默跳过：解析失败要回传给界面，避免"点了没反应"
+                    traceback.print_exc()
+                    errors.append("%s / %s：解析失败 %s" % (ds.get("name"), name, ex))
                     continue
                 keep = t.get("keep") or []
                 base = t.get("base_columns") or []
@@ -1316,12 +1321,16 @@ def delete_fields(keys, dataset_ids=None):
                         ops.append({"t": "col", "c": keep[i]})
             if not ops:
                 continue
-            raw_edit_apply(ds["id"], name, ops)
-            raw_edit_save(ds["id"], name, backup=True)
-            reparse_dataset(ds)
-            touched.append("%s / %s" % (ds.get("name"), name))
+            try:
+                raw_edit_apply(ds["id"], name, ops)
+                raw_edit_save(ds["id"], name, backup=True)
+                reparse_dataset(ds)
+                touched.append("%s / %s" % (ds.get("name"), name))
+            except Exception as ex:
+                traceback.print_exc()
+                errors.append("%s / %s：写回失败 %s" % (ds.get("name"), name, ex))
     save_state()
-    return {"ok": True, "deleted": sorted(keys), "touched": touched}
+    return {"ok": True, "deleted": sorted(keys), "touched": touched, "errors": errors}
 
 
 # ---------------------------------------------------------------- 汇总引擎
