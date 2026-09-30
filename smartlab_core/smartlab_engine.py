@@ -4109,6 +4109,11 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         try:
             if u.path.startswith("/api/"):
+                # ★ multipart（文件二进制直传）不能走 self._body()：
+                #   它会把 body 按 JSON 读掉，后面再 read 就挂死。
+                if (u.path == "/api/import_upload"
+                        and self.headers.get("Content-Type", "").startswith("multipart/form-data")):
+                    return self.api_post(u.path, {})
                 return self.api_post(u.path, self._body())
             self._json({"ok": False, "error": "not found"}, 404)
         except Exception as e:
@@ -4347,6 +4352,49 @@ class Handler(BaseHTTPRequestHandler):
                                "errors": errors, "dirs": dirs})
 
         if p == "/api/import_upload":
+            # ★ 二进制直传（multipart/form-data）：前端用 FormData 原样上传，
+            #   不再走 base64——大文件时 base64 编码 + 逐块字符串拼接会把
+            #   浏览器标签页卡死（导入"假死"的主因）。
+            if self.headers.get("Content-Type", "").startswith("multipart/form-data"):
+                added, errors = [], []
+                try:
+                    boundary = self.headers.get("Content-Type", "").split("boundary=")[-1].strip().strip('"')
+                    body_bytes = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                    delim = b"--" + boundary.encode() if isinstance(boundary, str) else b"--" + boundary
+                    parts = body_bytes.split(delim)
+                    for part in parts:
+                        if not part or part in (b"--", b"--\r\n", b"\r\n"):
+                            continue
+                        seg = part.strip(b"\r\n")
+                        if not seg or seg.startswith(b"--"):
+                            continue
+                        if b"filename=" not in seg.split(b"\r\n\r\n")[0]:
+                            continue
+                        try:
+                            head, _, data = seg.partition(b"\r\n\r\n")
+                            hm = re.search(rb'filename="([^"]*)"', head)
+                            name = re.sub(r'[\\/:*?"<>|]', "_", (hm.group(1).decode("utf-8", "ignore") if hm else "") or "upload.xlsx")
+                            if not os.path.splitext(name)[1]:
+                                name += ".xlsx"
+                            tmp = os.path.join(SRC_DIR, "_tmp_" + uuid.uuid4().hex[:8] + "_" + name)
+                            with open(tmp, "wb") as fh:
+                                fh.write(data)
+                            try:
+                                ds = import_file(tmp, display_name=name)
+                                added.append(ds_summary(ds))
+                            finally:
+                                try:
+                                    os.remove(tmp)
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            traceback.print_exc()
+                            errors.append({"file": name, "error": str(e)})
+                    save_state()
+                    return self._json({"ok": True, "added": added, "errors": errors})
+                except Exception as e:
+                    traceback.print_exc()
+                    return self._json({"ok": False, "error": "导入失败：%s" % e})
             files = b.get("files") or []
             added, errors = [], []
             for f in files:

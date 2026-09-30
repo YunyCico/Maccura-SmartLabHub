@@ -1289,26 +1289,41 @@ function setupImport() {
 }
 async function uploadFiles(files) {
   if (!files.length) return;
-  $('#btn-choose').innerHTML = '<span class="spin"></span>导入中…';
-  $('#btn-choose').disabled = true;
-  const payload = [];
-  for (const f of files) {
-    const buf = await f.arrayBuffer();
-    let bin = '';
-    const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i += 8192)
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-    payload.push({ name: f.name, data: btoa(bin) });
+  // 预检：超大文件提前说明，避免"点了没反应像卡死"
+  const MAX_MB = 200;
+  const tooBig = files.filter(f => f.size > MAX_MB * 1024 * 1024);
+  if (tooBig.length) {
+    return toast(`文件超过 ${MAX_MB}MB（${tooBig.map(f => f.name).join('、')}），请先拆分或转存后再导入`, 'err');
   }
-  try {
-    const r = await api('/api/import_upload', { files: payload });
-    const ok = r.added.length, bad = r.errors.length;
-    toast(`导入完成：成功 ${ok} 个${bad ? '，失败 ' + bad + ' 个' : ''}`, bad ? 'err' : 'ok');
-    if (bad) console.warn('导入失败明细', r.errors);
-    await loadAll();
-  } catch (e) { toast('导入失败：' + e.message, 'err'); }
-  $('#btn-choose').innerHTML = '选择文件导入';
-  $('#btn-choose').disabled = false;
+  const btn = $('#btn-choose');
+  btn.innerHTML = '<span class="spin"></span>导入中…';
+  btn.disabled = true;
+  const okList = [], badList = [];
+  // ★ 逐个文件用 FormData 原样直传（不走 base64）：
+  //   大文件 base64 + 字符串拼接会卡死页面；逐个传还让每个文件都有独立进度。
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    btn.innerHTML = `<span class="spin"></span>导入中（${i + 1}/${files.length}）…`;
+    try {
+      const fd = new FormData();
+      fd.append('files', f, f.name);
+      const resp = await fetch('/api/import_upload', { method: 'POST', body: fd });
+      let r;
+      try { r = await resp.json(); }
+      catch (e) { throw new Error('服务返回异常（HTTP ' + resp.status + '）'); }
+      if (!r.ok) throw new Error(r.error || '导入失败');
+      (r.added || []).forEach(x => okList.push(x));
+      (r.errors || []).forEach(x => badList.push(x));
+    } catch (e) {
+      badList.push({ file: f.name, error: e.message });
+      console.error('导入失败', f.name, e);
+    }
+  }
+  toast(`导入完成：成功 ${okList.length} 个${badList.length ? '，失败 ' + badList.length + ' 个' : ''}`, badList.length ? 'err' : 'ok');
+  if (badList.length) console.warn('导入失败明细', badList);
+  btn.innerHTML = '选择文件导入';
+  btn.disabled = false;
+  if (okList.length) await loadAll();
 }
 async function scanFolder() {
   const p = $('#folder-path').value.trim();
