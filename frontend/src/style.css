@@ -33,7 +33,7 @@ button { font: inherit; }
 .avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); font-size: 13px; font-weight: 600; }
 .avatar-img { object-fit: cover; background: #fff; }
 
-.workspace { flex: 1; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 22px 70px; }
+.workspace { flex: 1; width: 100%; max-width: 2000px; margin: 0 auto; padding: 0 40px 80px; }
 .topbar { padding: 56px 0 6px; text-align: center; }
 h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weight: 650; letter-spacing: -.02em; line-height: 1.08; }
 

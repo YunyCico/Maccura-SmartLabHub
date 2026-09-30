@@ -116,3 +116,6 @@ table.grid tbody tr:hover { background: var(--blue-l2); }
 h2::before { background: var(--blue); }
 .resultcard::before { background: linear-gradient(90deg, #4aa3f0, #0071e3); }
 .nav a.navhelp::before { background: var(--line); }
+
+/* 宽屏适配：取消主区限宽，铺满可用宽度 */
+.main { max-width: none; padding: 26px 34px 60px; }
