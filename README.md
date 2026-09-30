@@ -2,11 +2,11 @@
 
 迈克生物集团 · 实验室运营管理部 —— 部门工作平台（钉钉企业内部应用）。
 
-平台外壳为 Vue 3 + FastAPI，「数据分析」模块原样内嵌 SmartLabHub 数据汇总助手 v2.4.0，保留其全部功能、布局与视觉风格。
+平台外壳为 Vue 3 + FastAPI，「数据分析」「6S标准报告」「Ding听记优化」模块。
 
 ## 目录结构
 
-```text
+```文本
 Maccura-SmartLabHub/
 ├── backend/                  # FastAPI 平台后端
 │   ├── app/
