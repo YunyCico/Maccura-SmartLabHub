@@ -71,14 +71,8 @@ onMounted(loadWorkspace)
 <template>
   <section class="dashboard-content">
     <div class="intro-row">
-      <div>
-        <h2>工作概况</h2>
-      </div>
-      <div class="date-stamp">
-        <span class="date-label">工作区状态</span>
-        <strong>{{ loading ? '同步中' : '已就绪' }}</strong>
-        <span class="date-line"></span>
-      </div>
+      <h2>工作概况</h2>
+      <span class="status-pill"><span class="status-dot"></span>{{ loading ? '同步中' : '工作区已就绪' }}</span>
     </div>
 
     <div v-if="apiError" class="notice-bar warning"><span class="notice-mark">!</span>{{ apiError }}</div>
@@ -88,7 +82,7 @@ onMounted(loadWorkspace)
         v-for="(metric, i) in metrics"
         :key="metric.key"
         class="metric-card"
-        :class="{ 'metric-primary': i === 0, 'metric-accent': i === 2 }"
+        :class="{ 'metric-primary': i === 0 }"
       >
         <div class="metric-topline"><span>{{ metric.label }}</span><span class="metric-index">{{ metric.index }}</span></div>
         <strong>{{ summary[metric.key] }}</strong>
@@ -98,11 +92,7 @@ onMounted(loadWorkspace)
 
     <section class="module-panel">
       <div class="panel-heading">
-        <div>
-          <p class="section-kicker">WORKSPACE MODULES</p>
-          <h3>部门工作模块</h3>
-        </div>
-        <span class="module-count">3 个模块</span>
+        <h3>部门工作模块</h3>
       </div>
       <div class="module-grid">
         <button

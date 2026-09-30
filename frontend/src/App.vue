@@ -42,10 +42,7 @@ onMounted(loadUser)
 
     <main class="workspace">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">OPERATIONS CONTROL ROOM / 2026.09</p>
-          <h1>{{ currentTitle }}</h1>
-        </div>
+        <h1>{{ currentTitle }}</h1>
       </header>
 
       <RouterView v-slot="{ Component }">
