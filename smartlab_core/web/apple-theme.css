@@ -101,3 +101,18 @@ table.grid tbody tr:hover { background: var(--blue-l2); }
 .pschip b { color: var(--blue-deep); }
 .pstool .ps-scope.on { background: var(--blue); border-color: var(--blue); color: #fff; }
 .steps b { color: var(--blue); }
+
+/* 中和原生装饰：光晕 / 橙色强调条 / 奶油色块 */
+.side::before, .side::after { display: none; }
+.nav a.active::before { display: none; }
+.brandlogo { display: none; }
+.brand::before { content: "maccura"; color: #00a1e9; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; font-size: 26px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.brandrule { background: var(--line); }
+.sidefoot { background: transparent; color: var(--ink3); }
+.sfhelp, .sfver { color: var(--ink3); }
+.kpi::before, .kpi::after { display: none; }
+.page > h1::before { background: var(--blue); }
+.page > h1::after { background: var(--line); }
+h2::before { background: var(--blue); }
+.resultcard::before { background: linear-gradient(90deg, #4aa3f0, #0071e3); }
+.nav a.navhelp::before { background: var(--line); }
