@@ -92,6 +92,7 @@ def state() -> dict[str, Any]:
             "sheet_count": sheet_count,
             "row_count": total_rows,
             "field_count": field_count,
+            "result_count": engine.result_count(),
         },
     }
 

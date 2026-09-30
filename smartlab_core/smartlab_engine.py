@@ -1629,6 +1629,14 @@ def get_result(rid):
     return None
 
 
+def result_count():
+    """持久化汇总结果份数（磁盘为准，重启后仍在）"""
+    try:
+        return len([f for f in os.listdir(RESULT_DIR) if f.endswith(".json.gz")])
+    except Exception:
+        return len(_results)
+
+
 def load_persisted_results():
     """启动时把磁盘上最近的结果读回内存，让老页面上的导出按钮继续可用"""
     n = 0

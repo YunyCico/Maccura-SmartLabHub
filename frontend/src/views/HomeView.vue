@@ -8,10 +8,11 @@ const router = useRouter()
 const loading = ref(true)
 const apiError = ref('')
 const summary = ref<DashboardSummary>({
-  service_request_count: 0,
-  completed_count: 0,
-  average_satisfaction: '0.00',
-  pending_import_count: 0,
+  dataset_count: 0,
+  sheet_count: 0,
+  row_count: 0,
+  field_count: 0,
+  result_count: 0,
   recent_tasks: [],
 })
 
@@ -46,11 +47,15 @@ const modules = [
 ]
 
 const metrics = [
-  { key: 'service_request_count', label: '服务需求', index: '01', note: '当前周期累计记录' },
-  { key: 'completed_count', label: '已完成', index: '02', note: '已完成处理的需求' },
-  { key: 'average_satisfaction', label: '平均满意度', index: '03', note: '统一保留两位小数' },
-  { key: 'pending_import_count', label: '待确认批次', index: '04', note: '等待人工确认的数据' },
+  { key: 'dataset_count', label: '数据表', note: '已导入并保留的数据源' },
+  { key: 'row_count', label: '数据总行数', note: '全部工作表累计' },
+  { key: 'field_count', label: '字段', note: '字段字典去重计数' },
+  { key: 'result_count', label: '汇总结果', note: '保留最近 20 份' },
 ] as const
+
+function formatMetric(key: string, value: number): string {
+  return key === 'row_count' ? value.toLocaleString('en-US') : String(value)
+}
 
 async function loadWorkspace() {
   loading.value = true
@@ -84,8 +89,8 @@ onMounted(loadWorkspace)
         class="metric-card"
         :class="{ 'metric-primary': i === 0 }"
       >
-        <div class="metric-topline"><span>{{ metric.label }}</span><span class="metric-index">{{ metric.index }}</span></div>
-        <strong>{{ summary[metric.key] }}</strong>
+        <div class="metric-topline"><span>{{ metric.label }}</span></div>
+        <strong>{{ formatMetric(metric.key, summary[metric.key]) }}</strong>
         <p>{{ metric.note }}</p>
       </article>
     </div>
