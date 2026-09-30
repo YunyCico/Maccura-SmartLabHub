@@ -13,7 +13,7 @@ const router = createRouter({
     {
       path: '/data-analysis',
       name: 'data-analysis',
-      component: () => import('../views/DataAnalysisView.vue'),
+      component: { render: () => null },
       meta: { title: '数据分析', code: '02' },
     },
     {

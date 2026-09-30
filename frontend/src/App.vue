@@ -3,12 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchCurrentUser, fetchDingTalkConfig, type CurrentUser } from './api/user'
 import { resolveDingTalkAuthCode } from './lib/dingtalk'
+import DataAnalysisView from './views/DataAnalysisView.vue'
 
 const route = useRoute()
 const user = ref<CurrentUser | null>(null)
 
 const currentTitle = computed(() => (route.meta.title as string) ?? 'SmartLabHub')
 const isHome = computed(() => route.path === '/')
+const isDataAnalysis = computed(() => route.path === '/data-analysis')
 const initials = computed(() => (user.value?.name ? user.value.name.slice(0, 1) : '…'))
 
 async function loadUser() {
@@ -46,11 +48,11 @@ onMounted(loadUser)
         <h1>{{ currentTitle }}</h1>
       </header>
 
-      <RouterView v-slot="{ Component }">
-        <keep-alive>
-          <component :is="Component" :key="route.path" />
-        </keep-alive>
-      </RouterView>
+      <div v-show="isDataAnalysis" class="persist-slot">
+        <DataAnalysisView />
+      </div>
+
+      <RouterView v-if="!isDataAnalysis" />
     </main>
   </div>
 </template>
