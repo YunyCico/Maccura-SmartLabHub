@@ -45,7 +45,7 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .intro-row h2 { margin: 0; color: var(--ink); font-size: clamp(28px, 4vw, 40px); font-weight: 600; letter-spacing: -.015em; }
 .status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--card); color: var(--muted); font-size: 12px; }
 
-.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 26px; }
 .metric-card { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 150px; padding: 22px; border-radius: 18px; background: var(--card); text-align: center; }
 .metric-card.metric-primary { background: var(--dark); color: #f5f5f7; }
 .metric-topline { display: flex; justify-content: center; color: var(--muted); font-size: 12px; }
@@ -65,6 +65,20 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .module-card.tone-orange { --tone: #ff9500; }
 .module-card.tone-green { --tone: #34c759; }
 .module-card.tone-purple { --tone: #af52de; }
+
+/* 首页按工作模块分区域展示 */
+.regions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 34px; }
+.region-card { grid-column: span 1; display: flex; flex-direction: column; border: 1px solid var(--hair); border-radius: 16px; background: var(--card); padding: 22px; }
+.region-card.live { grid-column: 1 / -1; }
+.region-head { display: flex; align-items: center; gap: 14px; }
+.region-title { flex: 1; min-width: 0; }
+.region-title h3 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.region-title p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.region-enter { border: 0; background: none; color: var(--blue); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.region-enter:hover { text-decoration: underline; text-underline-offset: 4px; }
+.region-body { padding-top: 18px; }
+.region-body .metrics-grid { margin-top: 0; }
+.region-tip { margin-top: 16px; padding: 12px 16px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 12px; }
 .module-icon { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 18px; border-radius: 14px; color: #fff; background: var(--tone, var(--blue)); }
 .module-icon.tone-blue { background: linear-gradient(145deg, #4aa3f0, #0071e3); }
 .module-icon.tone-orange { background: linear-gradient(145deg, #ffb340, #ff9500); }

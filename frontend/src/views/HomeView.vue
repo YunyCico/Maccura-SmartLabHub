@@ -91,19 +91,6 @@ onMounted(loadWorkspace)
 
     <div v-if="apiError" class="notice-bar warning"><span class="notice-mark">!</span>{{ apiError }}</div>
 
-    <div class="metrics-grid">
-      <article
-        v-for="(metric, i) in metrics"
-        :key="metric.key"
-        class="metric-card"
-        :class="{ 'metric-primary': i === 0 }"
-      >
-        <div class="metric-topline"><span>{{ metric.label }}</span></div>
-        <strong>{{ formatMetric(metric.key, summary[metric.key]) }}</strong>
-        <p>{{ metric.note }}</p>
-      </article>
-    </div>
-
     <section class="module-panel">
       <div class="panel-heading">
         <h3>部门工作模块</h3>
@@ -141,6 +128,46 @@ onMounted(loadWorkspace)
             <span class="module-action">{{ module.action }} ↗</span>
           </span>
         </button>
+      </div>
+    </section>
+
+    <section class="module-panel">
+      <div class="panel-heading">
+        <h3>分析报表</h3>
+      </div>
+      <div class="regions-grid">
+        <section
+          v-for="m in modules"
+          :key="'r-' + m.code"
+          class="region-card"
+          :class="{ live: m.status === '可用' }"
+        >
+          <div class="region-head">
+            <div class="region-title">
+              <h3>{{ m.label }}</h3>
+              <p>{{ m.status === '可用' ? '实时统计 · 数据随导入与汇总自动更新' : '报表区域已预留' }}</p>
+            </div>
+            <button class="region-enter" type="button" @click="router.push(m.to)">进入 ↗</button>
+          </div>
+
+          <div v-if="m.status === '可用'" class="region-body">
+            <div class="metrics-grid">
+              <article
+                v-for="metric in metrics"
+                :key="metric.key"
+                class="metric-card"
+                :class="{ 'metric-primary': metric.key === 'dataset_count' }"
+              >
+                <div class="metric-topline"><span>{{ metric.label }}</span></div>
+                <strong>{{ formatMetric(metric.key, summary[metric.key]) }}</strong>
+                <p>{{ metric.note }}</p>
+              </article>
+            </div>
+          </div>
+          <div v-else class="region-tip">
+            该模块功能规划中，开发完成后将在此展示对应的统计数据与报表。
+          </div>
+        </section>
       </div>
     </section>
 
