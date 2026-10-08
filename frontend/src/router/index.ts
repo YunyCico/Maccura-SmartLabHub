@@ -38,6 +38,17 @@ const router = createRouter({
         points: ['6S 检查记录与问题归集', '整改跟踪与闭环管理', '标准化报告自动生成'],
       },
     },
+    {
+      path: '/service-report',
+      name: 'service-report',
+      component: () => import('../views/PlannedModuleView.vue'),
+      meta: {
+        title: '服务报告标准化',
+        code: '05',
+        summary: '将各实验室上报的服务报告（安装、维修、巡检、培训等）清洗套版，统一结构化字段与排版，一键生成标准化服务报告。',
+        points: ['服务报告模板套版与字段标准化', '多来源报告归集与查重', '一键生成标准排版报告'],
+      },
+    },
   ],
 })
 

@@ -44,6 +44,15 @@ const modules = [
     action: '查看模块',
     tone: 'green',
   },
+  {
+    code: '04',
+    label: '服务报告标准化',
+    to: '/service-report',
+    description: '预留服务报告模板套版、字段标准化与一键生成标准排版报告能力。',
+    status: '规划中',
+    action: '查看模块',
+    tone: 'purple',
+  },
 ]
 
 const metrics = [
@@ -116,8 +125,11 @@ onMounted(loadWorkspace)
               <template v-else-if="module.code === '02'">
                 <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" />
               </template>
-              <template v-else>
+              <template v-else-if="module.code === '03'">
                 <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" /><path d="M9 12l2 2 4-4" />
+              </template>
+              <template v-else>
+                <path d="M7 3h8l4 4v14H7z" /><path d="M15 3v4h4" /><path d="M10 12h6M10 16h6" />
               </template>
             </svg>
           </span>

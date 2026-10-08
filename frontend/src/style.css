@@ -64,10 +64,12 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .module-card.tone-blue { --tone: #0071e3; }
 .module-card.tone-orange { --tone: #ff9500; }
 .module-card.tone-green { --tone: #34c759; }
+.module-card.tone-purple { --tone: #af52de; }
 .module-icon { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 18px; border-radius: 14px; color: #fff; background: var(--tone, var(--blue)); }
 .module-icon.tone-blue { background: linear-gradient(145deg, #4aa3f0, #0071e3); }
 .module-icon.tone-orange { background: linear-gradient(145deg, #ffb340, #ff9500); }
 .module-icon.tone-green { background: linear-gradient(145deg, #63d781, #34c759); }
+.module-icon.tone-purple { background: linear-gradient(145deg, #c07aec, #af52de); }
 .module-code { display: none; }
 .module-card strong { margin: 0 0 8px; color: var(--ink); font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
 .module-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
