@@ -2546,9 +2546,15 @@ function showExportDone(r, fmt) {
   if (cb) cb.onclick = () => { box.style.display = 'none'; };
   try { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
 }
-$('#btn-open-out').onclick = () => api('/api/open_folder', { path: S.outDir });
-$('#btn-open-out2').onclick = () => api('/api/open_folder', { path: S.outDir });
-$('#btn-open-lib').onclick = () => api('/api/open_folder', { path: S.baseDir });
+/* ★ 打开目录：成功给提示（资源管理器窗口可能被浏览器挡住），失败给原因 */
+function openFolder(path, label) {
+  api('/api/open_folder', { path })
+    .then(() => toast(label + '已在资源管理器中打开（没看到请看任务栏）', 'ok'))
+    .catch(e => toast('打不开' + label + '：' + e.message, 'err'));
+}
+$('#btn-open-out').onclick = () => openFolder(S.outDir, '导出目录');
+$('#btn-open-out2').onclick = () => openFolder(S.outDir, '导出目录');
+$('#btn-open-lib').onclick = () => openFolder(S.baseDir, '数据目录');
 
 /* ==========================================================================
    v2.0.0 「结果分析」—— 数据概览 + 数据透视
