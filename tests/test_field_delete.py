@@ -4,7 +4,7 @@
 """
 import openpyxl
 
-from smartlab_core import smartlab_engine as engine
+from modules.data_analysis import smartlab_engine as engine
 
 
 def _make_xlsx(path):

@@ -1,22 +1,34 @@
 @echo off
-title SmartLabHub 平台启动器
-cd /d C:\Users\98319\Documents\Qoder\2026-09-28\58727fb4
+setlocal EnableExtensions
+chcp 65001 >nul 2>&1
+cd /d "%~dp0"
 
-echo [1/3] 启动后端服务（8000 端口，含数据分析界面）...
-start "SmartLabHub-Backend" /min cmd /k "backend\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000"
+set "PYTHON_EXE=C:\Users\98319\.workbuddy\binaries\python\envs\smartlabhub\Scripts\python.exe"
+set "LAUNCHER=%~dp0platform\tools\launch_platform.py"
 
-echo [2/3] 启动平台前端（5173 端口）...
-start "SmartLabHub-Frontend" /min cmd /k "cd frontend && set PATH=C:\Program Files\nodejs;%%PATH%% && npm run dev"
+if not exist "%PYTHON_EXE%" (
+    echo [ERROR] Python runtime not found:
+    echo %PYTHON_EXE%
+    echo.
+    echo Install Python deps or update PYTHON_EXE in this file.
+    pause
+    exit /b 2
+)
 
-echo [3/3] 等待服务就绪后打开浏览器...
-timeout /t 12 /nobreak >/dev/null
-start "" "D:\software\QUARK\quark.exe" "http://localhost:5173/"
+if not exist "%LAUNCHER%" (
+    echo [ERROR] Launcher script not found:
+    echo %LAUNCHER%
+    pause
+    exit /b 2
+)
 
-echo.
-echo ============================================================
-echo  启动完成！
-echo    平台首页   http://localhost:5173/
-echo    数据分析   首页点数据分析卡片，或直接打开 http://127.0.0.1:8765/
-echo  停止方法：运行同目录的 停止平台.bat，或直接关掉两个黑色窗口。
-echo ============================================================
-pause
+"%PYTHON_EXE%" "%LAUNCHER%" %*
+set "RC=%ERRORLEVEL%"
+
+if not "%RC%"=="0" (
+    echo.
+    echo [FAILED] Exit code %RC%. See logs in the "logs" folder.
+    pause
+)
+
+exit /b %RC%

@@ -2,7 +2,7 @@
 import openpyxl
 import pytest
 
-from smartlab_core import smartlab_engine as engine
+from modules.data_analysis import smartlab_engine as engine
 
 
 @pytest.fixture

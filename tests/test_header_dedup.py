@@ -1,7 +1,7 @@
 """表头去重回归：重复表头且整列无数据 = 模板残留，解析时丢弃；有数据的重复列保留 _2。"""
 import openpyxl
 
-from smartlab_core import smartlab_engine as engine
+from modules.data_analysis import smartlab_engine as engine
 
 
 def _write(path, rows):

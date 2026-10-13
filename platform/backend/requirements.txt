@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pandas
+openpyxl
+xlrd==2.0.1
+lxml==5.3.0
+sqlalchemy
+psycopg[binary]
+alembic
+pydantic-settings
+python-multipart
+pytest
+httpx

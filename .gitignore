@@ -9,6 +9,15 @@ dist/
 uploads/
 exports/
 data/
+modules/*/data/
 *.db
 .pytest_cache/
 .smartlabhub-review/
+
+# 迁移/恢复过程的中间产物：体积大且可重新生成，不入库
+backup/_migration/
+
+# 运行期产物
+logs/
+shots/
+*.log

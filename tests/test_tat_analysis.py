@@ -1,5 +1,5 @@
 """TAT 分析的回归测试：纯函数、只读、无任何落盘。"""
-from smartlab_core import smartlab_engine as engine
+from modules.data_analysis import smartlab_engine as engine
 
 COLS = ["模块", "开始时间", "结束时间", "备注"]
 ROWS = [
