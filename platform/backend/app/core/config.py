@@ -10,6 +10,21 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./department_platform.db"
     cors_origins: str = "http://localhost:5173"
 
+    # ---- 对外发布（2026-10-27 增加）----
+    # 监听地址：默认只听本机，改成 0.0.0.0 才会被其他机器访问。
+    # 故意不默认放开 —— 装到云服务器上忘记设密码就整台机器裸奔了。
+    bind_host: str = "127.0.0.1"
+    bind_port: int = 8000
+    # 服务在 HTTPS 后面跑时必须设 true，否则登录 cookie 会以明文过网络
+    cookie_secure: bool = False
+    # 生产环境关掉 /docs 与 /openapi.json：那会把所有接口和参数列给陌生人看
+    expose_api_docs: bool = True
+    # 数据分析引擎的内嵌端口（只在 127.0.0.1 上，由 /engine 反向代理访问）
+    engine_port: int = 8765
+    # 登录失败限流：同一 IP / 同一账号在窗口期内允许的失败次数
+    login_max_failures: int = 8
+    login_failure_window_seconds: int = 600
+
     # ---- 钉钉 ----
     dingtalk_corp_id: str = ""
     dingtalk_app_key: str = ""

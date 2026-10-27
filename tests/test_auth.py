@@ -402,142 +402,82 @@ def test_member_cannot_edit_others_profile(client) -> None:
     )
     assert resp.status_code == 403
 
+# ---------------- 对外发布：引擎反代 / 文档开关 / 登录限流 ----------------
 
-# ---------------- 工号长度 ----------------
+def test_engine_proxy_requires_login(client) -> None:
+    """引擎原来只绑本机、接口裸奔；挂到 /engine 之后同样要登录。"""
+    _setup_admin(client)
+    client.cookies.clear()
+    assert client.get("/engine/").status_code == 401
 
-def test_short_employee_id_is_allowed(client) -> None:
-    """工号可能只有 2 位（比如 95），不能被「至少 3 位」挡住。"""
-    resp = client.post(
-        "/api/auth/setup",
-        json={"username": "95", "password": "Passw0rd!x", "display_name": "95"},
-    )
+
+def test_engine_proxy_serves_workbench_when_logged_in(client) -> None:
+    """登录后 /engine/ 能拿到工作台页面（不是 502/503）。"""
+    _setup_admin(client)
+    resp = client.get("/engine/")
     assert resp.status_code == 200
-    assert resp.json()["user"]["username"] == "95"
+    assert "text/html" in resp.headers["content-type"]
+    assert "maccura" in resp.text.lower() or "SmartLabHub" in resp.text
+
+
+def test_engine_proxy_forwards_api(client) -> None:
+    """引擎自己的 /api/ 也要能经代理走通（前端靠它取配置）。"""
+    _setup_admin(client)
+    resp = client.get("/engine/api/state")
+    assert resp.status_code == 200
+    assert resp.json().get("ok") is True
+
+
+def test_embed_url_is_relative_not_localhost(client) -> None:
+    """iframe 地址必须是 /engine/ 这种相对路径。
+
+    一旦退回 http://127.0.0.1:8765/，同事在自己电脑上打开平台时，
+    那个 127.0.0.1 指的是他自己的机器 —— iframe 直接白屏。
+    """
+    _setup_admin(client)
+    status = client.get("/api/data-analysis/embed-status").json()
+    assert status["url"].startswith("/engine")
+    assert "127.0.0.1" not in status["url"]
+
+
+def test_login_is_rate_limited(client) -> None:
+    """连续输错要限流，否则公网上会被人无限撞库。"""
+    from app.services import auth_service
+
+    auth_service.reset_login_failures()
+    _setup_admin(client)
+    client.cookies.clear()
+
+    codes = []
+    for _ in range(12):
+        codes.append(
+            client.post(
+                "/api/auth/login", json={"username": "admin", "password": "wrong"}
+            ).status_code
+        )
+    assert 429 in codes, f"一直没被限流，返回码={codes}"
+    blocked = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "Passw0rd!x"}
+    )
+    assert blocked.status_code == 429
+    assert "分钟后再试" in blocked.json()["detail"]
+    auth_service.reset_login_failures()
+
+
+def test_login_failure_counter_clears_on_success(client) -> None:
+    """成功登录后该账号的失败计数清零，正常用户输错一两次不受影响。"""
+    from app.services import auth_service
+
+    auth_service.reset_login_failures()
+    _setup_admin(client)
+    client.cookies.clear()
+    for _ in range(3):
+        client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+    assert client.post(
+        "/api/auth/login", json={"username": "admin", "password": "Passw0rd!x"}
+    ).status_code == 200
     client.cookies.clear()
     assert client.post(
-        "/api/auth/login", json={"username": "95", "password": "Passw0rd!x"}
+        "/api/auth/login", json={"username": "admin", "password": "Passw0rd!x"}
     ).status_code == 200
-
-
-# ---------------- 名称 / 头像 ----------------
-
-_AVATAR = "data:image/webp;base64,AAAA"
-
-
-def test_update_own_display_name_and_avatar(client) -> None:
-    """自己可以改显示名和头像，改完 /me 立刻是新的。"""
-    _setup_admin(client, username="95", password="Passw0rd!x")
-    resp = client.patch(
-        "/api/auth/profile",
-        json={"display_name": "孟鹏杰", "avatar": _AVATAR},
-    )
-    assert resp.status_code == 200
-    user = resp.json()["user"]
-    assert user["display_name"] == "孟鹏杰"
-    assert user["avatar"] == _AVATAR
-    # 再查一次，确认落了库
-    me = client.get("/api/auth/me").json()["user"]
-    assert me["display_name"] == "孟鹏杰"
-    assert me["avatar"] == _AVATAR
-
-
-def test_clear_avatar_falls_back_to_initials(client) -> None:
-    """头像传空串 = 清除，前端会用姓名首字兜底。"""
-    _setup_admin(client)
-    client.patch("/api/auth/profile", json={"avatar": _AVATAR})
-    resp = client.patch("/api/auth/profile", json={"avatar": ""})
-    assert resp.status_code == 200
-    assert resp.json()["user"]["avatar"] == ""
-
-
-def test_avatar_rejects_non_image(client) -> None:
-    """不是图片的 data URL 要拒掉（防止往里塞任意内容）。"""
-    _setup_admin(client)
-    resp = client.patch(
-        "/api/auth/profile",
-        json={"avatar": "data:text/html;base64,PHNjcmlwdD4="},
-    )
-    assert resp.status_code == 400
-    assert "格式不支持" in resp.json()["detail"]
-
-
-def test_avatar_rejects_oversized(client) -> None:
-    """超过 200KB 的头像要拒掉（说明没在前端压缩）。"""
-    _setup_admin(client)
-    huge = "data:image/png;base64," + "A" * (201 * 1024)
-    resp = client.patch("/api/auth/profile", json={"avatar": huge})
-    assert resp.status_code == 400
-    assert "太大" in resp.json()["detail"]
-
-
-def test_profile_cannot_escalate_role(client) -> None:
-    """改资料接口不能用来提权：多传 role 不生效。"""
-    _setup_admin(client)
-    client.post(
-        "/api/auth/users",
-        json={"username": "member1", "password": "Member123!", "role": "member"},
-    )
-    client.cookies.clear()
-    client.post("/api/auth/login", json={"username": "member1", "password": "Member123!"})
-
-    resp = client.patch(
-        "/api/auth/profile",
-        json={"display_name": "想提权", "role": "admin", "active": True},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["user"]["role"] == "member"
-    assert resp.json()["user"]["display_name"] == "想提权"
-
-
-def test_admin_can_edit_other_user_profile(client) -> None:
-    """管理员能改别人的名称和头像。"""
-    _setup_admin(client)
-    created = client.post(
-        "/api/auth/users",
-        json={"username": "8873", "password": "Member123!", "role": "member"},
-    ).json()["user"]
-
-    resp = client.patch(
-        f"/api/auth/users/{created['id']}",
-        json={"display_name": "张三", "avatar": _AVATAR},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["user"]["display_name"] == "张三"
-    assert resp.json()["user"]["avatar"] == _AVATAR
-
-    listed = client.get("/api/auth/users").json()["users"]
-    target = next(u for u in listed if u["id"] == created["id"])
-    assert target["display_name"] == "张三"
-    assert target["avatar"] == _AVATAR
-
-
-def test_create_user_with_avatar(client) -> None:
-    """建号时可以直接带头像。"""
-    _setup_admin(client)
-    resp = client.post(
-        "/api/auth/users",
-        json={
-            "username": "12121",
-            "password": "Member123!",
-            "display_name": "李四",
-            "role": "admin",
-            "avatar": _AVATAR,
-        },
-    )
-    assert resp.status_code == 200
-    assert resp.json()["user"]["avatar"] == _AVATAR
-
-
-def test_member_cannot_edit_others_profile(client) -> None:
-    """普通成员不能改别人的资料。"""
-    _setup_admin(client)
-    created = client.post(
-        "/api/auth/users",
-        json={"username": "member1", "password": "Member123!", "role": "member"},
-    ).json()["user"]
-    client.cookies.clear()
-    client.post("/api/auth/login", json={"username": "member1", "password": "Member123!"})
-    resp = client.patch(
-        f"/api/auth/users/{created['id']}", json={"display_name": "越权"}
-    )
-    assert resp.status_code == 403
+    auth_service.reset_login_failures()

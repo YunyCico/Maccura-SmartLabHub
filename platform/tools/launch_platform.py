@@ -35,6 +35,10 @@ FRONTEND_DIR = ROOT / "home"
 
 BACKEND_PORT = 8000
 FRONTEND_PORT = 5173
+# 监听地址：默认只听本机（安全）。部署到服务器对外提供服务时，
+# 设环境变量 SLH_BIND_HOST=0.0.0.0，或者直接用 systemd 起 uvicorn（推荐）。
+# 健康检查始终走 127.0.0.1，不要把 BACKEND_URL 改成 0.0.0.0。
+BIND_HOST = os.environ.get("SLH_BIND_HOST", "127.0.0.1")
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}"
 FRONTEND_URL = f"http://127.0.0.1:{FRONTEND_PORT}"
 BACKEND_HEALTH = f"{BACKEND_URL}/api/health"
@@ -369,7 +373,7 @@ def main() -> int:
                         "--app-dir",
                         str(BACKEND_DIR),
                         "--host",
-                        "127.0.0.1",
+                        BIND_HOST,
                         "--port",
                         str(BACKEND_PORT),
                     ],
@@ -416,7 +420,7 @@ def main() -> int:
                     "--app-dir",
                     str(BACKEND_DIR),
                     "--host",
-                    "127.0.0.1",
+                    BIND_HOST,
                     "--port",
                     str(BACKEND_PORT),
                 ],
@@ -455,6 +459,8 @@ def main() -> int:
                 [
                     str(NODE_EXE),
                     str(VITE_BIN),
+                    # 开发服务器只给本机用，不跟随后端对外监听 ——
+                    # 它没有鉴权，暴露出去等于把源码和热更新通道交出去
                     "--host",
                     "127.0.0.1",
                     "--port",

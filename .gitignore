@@ -29,3 +29,6 @@ shots/
 /db
 platform/tools/_backup/
 platform/tools/_*.png
+
+# 备份产物（含账号库和数据，绝不能进库）
+/backups/

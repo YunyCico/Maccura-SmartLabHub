@@ -21,6 +21,7 @@ import hmac
 import os
 import secrets
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -410,3 +411,59 @@ def delete_session(token: str) -> None:
 
 def session_ttl_seconds() -> int:
     return SESSION_TTL_DAYS * 24 * 60 * 60
+
+
+# ---------------- 登录失败限流 ----------------
+#
+# 公网部署后登录接口一定会被人扫。这里做两层限制，都是内存计数（重启即清零）：
+#   - 同一个账号：10 分钟内失败 10 次就暂时锁住，防定向爆破
+#   - 同一个来源 IP：10 分钟内失败 30 次就暂时锁住，防换账号撞库
+# 计数只记失败，成功即清 —— 正常用户输错一两次不会被影响。
+#
+# 为什么不做持久化：这是"止血"措施，不是审计。
+# 真要查谁在爆破，应该看反向代理的访问日志。
+
+_login_failures: dict[str, list[float]] = {}
+
+_FAIL_WINDOW_SECONDS = 600
+_MAX_FAILURES_PER_USER = 10
+_MAX_FAILURES_PER_IP = 30
+
+
+def _prune(bucket: list[float], now: float) -> list[float]:
+    return [stamp for stamp in bucket if now - stamp < _FAIL_WINDOW_SECONDS]
+
+
+def _count(key: str, now: float) -> int:
+    bucket = _prune(_login_failures.get(key, []), now)
+    if bucket:
+        _login_failures[key] = bucket
+    else:
+        _login_failures.pop(key, None)
+    return len(bucket)
+
+
+def login_blocked_reason(client_ip: str, username: str) -> str:
+    """返回锁定原因；没被锁返回空串。"""
+    now = time.time()
+    if _count(f"ip:{client_ip}", now) >= _MAX_FAILURES_PER_IP:
+        return "登录尝试过于频繁，请 10 分钟后再试"
+    if _count(f"user:{(username or '').strip().lower()}", now) >= _MAX_FAILURES_PER_USER:
+        return "这个账号刚才输错太多次，请 10 分钟后再试"
+    return ""
+
+
+def register_login_failure(client_ip: str, username: str) -> None:
+    now = time.time()
+    for key in (f"ip:{client_ip}", f"user:{(username or '').strip().lower()}"):
+        _login_failures.setdefault(key, []).append(now)
+
+
+def clear_login_failures(client_ip: str, username: str) -> None:
+    _login_failures.pop(f"user:{(username or '').strip().lower()}", None)
+    # IP 计数不清：同一个人登录成功不代表这个 IP 就不用盯着了
+
+
+def reset_login_failures() -> None:
+    """测试用：清空所有计数。"""
+    _login_failures.clear()

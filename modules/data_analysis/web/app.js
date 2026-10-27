@@ -2,6 +2,30 @@
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 
+/* ---------------- 接口基地址 ----------------
+   这个工作台有两种打开方式：
+   1. 直接开引擎自己的服务（地址是根，比如 http://127.0.0.1:8765/）→ 前缀为空
+   2. 被平台嵌在 iframe 里（地址是 .../engine/）→ 所有 /api/xxx 要加 /engine 前缀
+
+   以前只有第 1 种，所以代码里全写死 '/api/xxx'。部署到服务器后平台统一走
+   /engine/ 反代，不加前缀就会打到平台自己的接口上去（路径对不上，各种 404）。
+   这里按当前地址自动推断，两种场景都能用。 */
+const API_BASE = (function () {
+  const path = location.pathname;                 // '/engine/' 或 '/engine/index.html'
+  const idx = path.indexOf('/engine');
+  if (idx < 0) return '';
+  const after = path.slice(idx + '/engine'.length);
+  // /engine 后面必须紧跟 '/' 或结束，避免 /enginetest 这种误判
+  if (after !== '' && !after.startsWith('/')) return '';
+  return path.slice(0, idx + '/engine'.length);
+})();
+
+/** 把 '/api/xxx' 变成 '[前缀]/api/xxx'。 */
+function apiUrl(path) {
+  if (!API_BASE) return path;
+  return API_BASE + (path.startsWith('/') ? path : '/' + path);
+}
+
 /* ---------------- 暂时隐藏的板块 ----------------
    2026-10-27：应要求先把「AI 助手」藏起来（后续重新规划），
    **代码和页面都完整保留，没有删除**，只是不再出现在左侧菜单、
@@ -63,7 +87,7 @@ function esc(s) {
 async function api(path, body) {
   let r;
   try {
-    r = await fetch(path, body
+    r = await fetch(apiUrl(path), body
       ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
       : {});
   } catch (e) {
@@ -185,8 +209,8 @@ function paintExports(r) {
       + '<div class="ei-main"><div class="ei-name">' + esc(f.name) + '</div>'
       + '<div class="ei-meta">' + fmtStamp(f.mtime) + ' · ' + fmtSize(f.size) + '</div></div>'
       + '<div class="ei-act">'
-      + '<a class="btn small" href="/api/download?name=' + encodeURIComponent(f.name)
-      + '" download="' + esc(f.name) + '">下载</a>'
+      + '<a class="btn small" href="' + apiUrl('/api/download?name=' + encodeURIComponent(f.name)) + '"'
+      + ' download="' + esc(f.name) + '">下载</a>'
       + '<button class="btn small danger act-expdel" data-name="' + esc(f.name) + '"'
       + ' title="删除这份导出备份（磁盘上的文件也会一起删掉，不可恢复）">删除</button>'
       + '</div></div>';
@@ -1344,7 +1368,7 @@ async function uploadFiles(files) {
     try {
       const fd = new FormData();
       fd.append('files', f, f.name);
-      const resp = await fetch('/api/import_upload', { method: 'POST', body: fd });
+      const resp = await fetch(apiUrl('/api/import_upload'), { method: 'POST', body: fd });
       let r;
       try { r = await resp.json(); }
       catch (e) { throw new Error('服务返回异常（HTTP ' + resp.status + '）'); }
@@ -2553,7 +2577,7 @@ async function doExport(fmt) {
     // 让浏览器真正“下载”一份，用户不用去翻目录
     try {
       const a = document.createElement('a');
-      a.href = '/api/download?name=' + encodeURIComponent(r.file);
+      a.href = apiUrl('/api/download?name=' + encodeURIComponent(r.file));
       a.download = r.file;
       a.style.display = 'none';
       document.body.appendChild(a);
@@ -2582,7 +2606,7 @@ function showExportDone(r, fmt) {
     + '<div class="exp-tip">浏览器已经开始下载这一份。同时程序在下面这个目录里也存了一份备份：</div>'
     + '<div class="exp-path">' + esc(r.path) + '</div>'
     + '<div class="exp-btns">'
-    + '<a class="btn small primary" href="/api/download?name=' + encodeURIComponent(r.file) + '" download="' + esc(r.file) + '">再下载一次</a>'
+    + '<a class="btn small primary" href="' + apiUrl('/api/download?name=' + encodeURIComponent(r.file)) + '" download="' + esc(r.file) + '">再下载一次</a>'
     + '<button class="btn small" id="btn-exp-folder">打开所在文件夹</button>'
     + '<button class="btn ghost sm" id="btn-exp-close">关闭</button>'
     + '</div>';
@@ -3603,7 +3627,7 @@ async function anExportPivot(fmt) {
     }));
     try {
       const a = document.createElement('a');
-      a.href = '/api/download?name=' + encodeURIComponent(r.file);
+      a.href = apiUrl('/api/download?name=' + encodeURIComponent(r.file));
       a.download = r.file;
       a.style.display = 'none';
       document.body.appendChild(a);

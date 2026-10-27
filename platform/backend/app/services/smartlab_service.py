@@ -39,7 +39,23 @@ def start_embed_server(preferred: int = 8765) -> str:
 
 
 def embed_url() -> str:
-    return f"http://127.0.0.1:{_server_port}/" if _server_port else ""
+    """内嵌工作台的访问地址 —— **同源相对路径**，不是绝对地址。
+
+    以前返回 `http://127.0.0.1:8765/`。这在"只在自己电脑上跑"时能用，
+    但部署到服务器后，同事浏览器里的 127.0.0.1 指的是**他自己电脑**，
+    iframe 就会白屏。改成 /engine/ 让浏览器始终回到平台这一个源，
+    由后端反向代理转给本机的引擎（见 main.py 的 engine_proxy）。
+    """
+    return "/engine/" if _server_port else ""
+
+
+def engine_port() -> int:
+    """引擎实际在听的端口（0 表示没起来）。
+
+    ⚠️ 不要用配置里的 8765 去拼代理地址：`pick_port` 在 8765 被占用时
+    会挑别的端口，代理必须跟着实际端口走。
+    """
+    return _server_port
 
 
 def embed_status() -> dict[str, Any]:

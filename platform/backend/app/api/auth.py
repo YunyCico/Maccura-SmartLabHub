@@ -14,6 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.services import auth_service
 from app.services.auth_service import (
     AuthError,
@@ -70,9 +71,24 @@ def _set_session_cookie(response: Response, token: str) -> None:
         max_age=session_ttl_seconds(),
         httponly=True,          # JS 读不到，防 XSS 偷 token
         samesite="lax",         # 跨站请求不带
-        secure=False,           # 本机/内网是 http；上 HTTPS 后应改 True
+        # 上 HTTPS 后必须打开，否则 cookie 会以明文经过网络。
+        # 由 COOKIE_SECURE 环境变量控制，默认关闭是为了本机 http 调试能用。
+        secure=get_settings().cookie_secure,
         path="/",
     )
+
+
+def _client_ip(request: Request) -> str:
+    """取真实来源 IP。
+
+    放在反向代理（Caddy / Nginx）后面时，直连的对端永远是 127.0.0.1，
+    X-Forwarded-For 的第一个才是客户端。因为应用建议只监听 127.0.0.1、
+    由代理转进来，这个头是我们自己的代理写的，可以信任。
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def current_user(request: Request) -> dict:
@@ -117,10 +133,16 @@ def auth_setup(payload: SetupPayload, response: Response, request: Request) -> d
 
 @router.post("/login")
 def auth_login(payload: LoginPayload, response: Response, request: Request) -> dict:
+    ip = _client_ip(request)
+    blocked = auth_service.login_blocked_reason(ip, payload.username)
+    if blocked:
+        raise HTTPException(status_code=429, detail=blocked)
     try:
         user = auth_service.authenticate(payload.username, payload.password)
     except AuthError as exc:
+        auth_service.register_login_failure(ip, payload.username)
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    auth_service.clear_login_failures(ip, payload.username)
     token = auth_service.create_session(user["id"], request.headers.get("user-agent", ""))
     _set_session_cookie(response, token)
     return {"ok": True, "user": user}

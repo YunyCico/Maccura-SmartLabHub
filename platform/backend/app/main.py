@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api import auth, dashboard, data_analysis, health, import_preview, imports, integrations, messages, user
 from app.core.config import get_settings
@@ -19,7 +19,14 @@ from app.services.smartlab_service import initialize_engine, start_embed_server
 
 settings = get_settings()
 
-app = FastAPI(title=settings.app_name, version="0.1.0")
+# 生产环境默认把 /docs、/openapi.json 关掉：那等于把整套接口说明书
+# （含参数名、字段名）公开给任何能访问到的人。调试时用 EXPOSE_API_DOCS=true 打开。
+_docs_kwargs = (
+    {"docs_url": "/docs", "openapi_url": "/openapi.json", "redoc_url": "/redoc"}
+    if settings.expose_api_docs
+    else {"docs_url": None, "openapi_url": None, "redoc_url": None}
+)
+app = FastAPI(title=settings.app_name, version="0.1.0", **_docs_kwargs)
 initialize_database()
 initialize_engine()
 start_embed_server()
@@ -58,7 +65,10 @@ _PUBLIC_API_PREFIXES = (
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if request.method == "OPTIONS" or not path.startswith("/api/"):
+    # ⚠️ 除了 /api/，还要管 /engine/ —— 那是数据分析引擎的反向代理入口，
+    #    挂的是引擎自己的页面和接口（以前完全裸奔）。漏掉这里等于白加鉴权。
+    guarded = path.startswith("/api/") or path.startswith("/engine/")
+    if request.method == "OPTIONS" or not guarded:
         return await call_next(request)
 
     # ★ 先无条件解析会话：即使这个路径是公开的（比如 /api/auth/me），
@@ -89,6 +99,81 @@ app.include_router(imports.router, prefix="/api")
 app.include_router(data_analysis.router, prefix="/api")
 app.include_router(messages.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
+
+
+# ------------------------------------------------------------------
+# 数据分析引擎反向代理（/engine/* -> 127.0.0.1:8765）
+#
+# 为什么需要：引擎自带一个 HTTP 服务，原来只绑 127.0.0.1，前端 iframe 直接用
+# `http://127.0.0.1:8765/`。这在"只在自己电脑上跑"时没问题，但一旦部署到服务器、
+# 同事从自己电脑访问，那个 127.0.0.1 就变成了**他自己电脑**，iframe 必然白屏。
+#
+# 现在统一从 /engine/ 走：浏览器只访问平台这一个源，引擎的端口不出本机。
+# 附带好处是登录中间件同样管住它 —— 引擎的接口以前是完全裸奔的。
+#
+# 必须在 SPA fallback 之前注册，否则会被 /{full_path:path} 截走。
+# ------------------------------------------------------------------
+_HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+}
+
+
+@app.api_route(
+    "/engine/{rest:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def engine_proxy(rest: str, request: Request):
+    """把 /engine/xxx 转发给本机的数据分析引擎，路径原样传递。"""
+    import httpx
+
+    from app.services import smartlab_service
+
+    # ★ 用引擎的实际端口，不是配置里的 8765：
+    #   8765 被占用时引擎会自己换一个，写死就会代理到错的地方。
+    port = smartlab_service.engine_port()
+    if not port:
+        return JSONResponse(
+            {"detail": "数据分析引擎没有启动，请查看 backend 日志。"}, status_code=503
+        )
+
+    url = f"http://127.0.0.1:{port}/{rest}"
+    if request.url.query:
+        url += "?" + request.url.query
+
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in _HOP_BY_HOP
+    }
+    body = await request.body()
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+            upstream = await client.request(
+                request.method, url, headers=headers, content=body, follow_redirects=False
+            )
+    except httpx.HTTPError as exc:
+        return JSONResponse(
+            {
+                "detail": "数据分析引擎没有响应，请确认 backend 已正常启动。",
+                "error": str(exc),
+            },
+            status_code=502,
+        )
+
+    response_headers = {
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower() not in _HOP_BY_HOP
+    }
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=response_headers,
+        media_type=upstream.headers.get("content-type"),
+    )
 
 
 # ------------------------------------------------------------------
