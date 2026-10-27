@@ -51,9 +51,8 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #34c759; }
 
 .dashboard-content { padding-top: 26px; }
-.intro-row { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 36px; text-align: center; }
-.intro-row h2 { margin: 0; color: var(--ink); font-size: clamp(28px, 4vw, 40px); font-weight: 600; letter-spacing: -.015em; }
-.status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--card); color: var(--muted); font-size: 12px; }
+/* 「工作概况」标题区已于 2026-10-27 移除（用户要求删掉），
+   对应的 .intro-row / .status-pill 样式一并清掉，避免留孤儿规则。 */
 
 .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 26px; }
 .metric-card { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 150px; padding: 22px; border-radius: 18px; background: var(--card); text-align: center; }
@@ -667,3 +666,54 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .slh-fs-key[readonly] { background: #f4f4f2; color: #6b6b72; }
 .slh-fs-sel { padding: 4px 4px; }
 .slh-fs-lock { font-size: 13px; opacity: .6; }
+
+/* ---------- 消息列表：最多显示 6 条，其余滚轮查看 ----------
+   高度由 v-scroll-limit 指令实测前 6 条得出（列表项高度不固定，写死不准），
+   这里只负责让它能滚、滚动条好看一点。 */
+.is-scrollable {
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* 滚到底不要带动整页滚动 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, .22) transparent;
+  /* 右侧留一点空隙，滚动条不压住内容 */
+  padding-right: 4px;
+}
+.is-scrollable::-webkit-scrollbar { width: 6px; }
+.is-scrollable::-webkit-scrollbar-track { background: transparent; }
+.is-scrollable::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .18);
+}
+.is-scrollable::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, .3); }
+
+/* ---------- 首页快捷导航：SmartLabHub 下方一排锚点按钮 ---------- */
+/* 居中排布，视觉上承接上方的大标题；按钮做低调的胶囊样式，悬停加深。 */
+.quick-nav {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 4px 0 26px;
+}
+.quick-nav-item {
+  padding: 8px 22px;
+  border: 1px solid rgba(0, 0, 0, .1);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background .18s, border-color .18s, transform .12s;
+}
+.quick-nav-item:hover {
+  background: #eef4fb;
+  border-color: rgba(27, 95, 170, .35);
+  transform: translateY(-1px);
+}
+.quick-nav-item:active { transform: translateY(0); }
+.quick-nav-item:focus-visible {
+  outline: 2px solid rgba(27, 95, 170, .55);
+  outline-offset: 2px;
+}

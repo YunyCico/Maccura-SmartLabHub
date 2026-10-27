@@ -6,7 +6,7 @@ import { fetchMessages, type MessageFeed, type MessageItem, type MessageSourceKe
 import { api } from '../api/http'
 import { isAdmin } from '../api/auth'
 import { resolveDingTalkAuthCode } from '../lib/dingtalk'
-import { loginOa, loginSalesforce, disconnectSalesforce, fetchSfTodayTasks, fetchSfMyEvents, fetchSfApprovals, fetchSfWeeklyPlans, fetchOaTodos, disconnectOa, fetchDingtalkReminders, type SfSectionResponse, type OaTodoItem, type DingtalkReminder } from '../api/integrations'
+import { loginOa, loginSalesforce, disconnectSalesforce, fetchSfTodayTasks, fetchSfMyEvents, fetchSfApprovals, fetchSfWeeklyPlans, fetchOaTodos, fetchOaCowork, disconnectOa, fetchDingtalkReminders, type SfSectionResponse, type OaTodoItem, type DingtalkReminder } from '../api/integrations'
 
 const router = useRouter()
 
@@ -77,6 +77,20 @@ const metrics = [
   { key: 'field_count', label: '字段', note: '字段字典去重计数' },
   { key: 'result_count', label: '汇总结果', note: '保留最近 20 份' },
 ] as const
+
+// ---------- 快捷导航 ----------
+// 页面顶部的锚点按钮，点击直达对应区域。锚点 id 与下方各 section 一一对应。
+const quickAnchors = [
+  { id: 'sec-notifications', label: 'Notification Center' },
+  { id: 'sec-work-modules', label: 'Work Modules' },
+  { id: 'sec-report', label: 'Report' },
+] as const
+
+function scrollToSection(id: string) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 // 待办数据来自后端 /api/messages（钉钉 / Salesforce / OA 聚合）。
 // 三家都未配置时后端返回示例数据，此处用 usingPlaceholder 标注出来。
@@ -167,6 +181,7 @@ function startAutoRefresh() {
     void loadMessages({ silent: true })
     void loadSalesforceSections()
     void loadOaTodos()
+    void loadOaCowork()
     void loadDingtalkReminders()
   }, autoRefreshSeconds.value * 1000)
   nextRefreshIn.value = autoRefreshSeconds.value
@@ -187,6 +202,7 @@ function handleVisibilityChange() {
     void loadMessages({ silent: true })
     void loadSalesforceSections()
     void loadOaTodos()
+    void loadOaCowork()
     void loadDingtalkReminders()
   }
 }
@@ -344,6 +360,12 @@ const oaTodos = ref<OaTodoItem[]>([])
 const oaLoading = ref(false)
 const oaDisconnecting = ref(false)
 // OA 登录表单：只要账号密码（OA 没有动态令牌，和 Salesforce 的区别就在这）
+// OA 公文（协同工作）
+const oaCowork = ref<OaTodoItem[]>([])
+const oaCoworkLoading = ref(false)
+// 未读计数：首页卡片右上角显示「N 未读」
+const oaUnreadCount = computed(() => oaTodos.value.filter(t => t.unread).length)
+const oaCoworkUnreadCount = computed(() => oaCowork.value.filter(t => t.unread).length)
 const oaForm = reactive({ username: '', password: '' })
 const oaLogging = ref(false)
 const oaLoginMessage = ref('')
@@ -456,6 +478,19 @@ function remindTimeLabel(item: DingtalkReminder): string {
   if (days === 1) return `明天 ${clock}`
   if (days === -1) return `昨天 ${clock}`
   return `${d.getMonth() + 1}-${d.getDate()} ${clock}`
+}
+
+async function loadOaCowork() {
+  oaCoworkLoading.value = true
+  try {
+    const res = await fetchOaCowork()
+    oaCowork.value = res.items || []
+  } catch (error) {
+    oaCowork.value = []
+    console.error(error)
+  } finally {
+    oaCoworkLoading.value = false
+  }
 }
 
 async function loadOaTodos() {
@@ -671,7 +706,7 @@ async function handleOaLogin() {
       )
       oaForm.password = ''
       await loadMessages()
-      await loadOaTodos()
+      await Promise.all([loadOaTodos(), loadOaCowork()])
     } else {
       oaLoginError.value = result.detail || '登录失败'
     }
@@ -923,14 +958,20 @@ onUnmounted(() => {
 
 <template>
   <section class="dashboard-content">
-    <div class="intro-row">
-      <h2>工作概况</h2>
-      <span class="status-pill"><span class="status-dot"></span>{{ loading ? '同步中' : '工作区已就绪' }}</span>
-    </div>
-
     <div v-if="apiError" class="notice-bar warning"><span class="notice-mark">!</span>{{ apiError }}</div>
 
-    <section class="todo-panel" aria-labelledby="notifications-center-title">
+    <!-- 快捷导航：点击直达下方对应区域（截图红框位置） -->
+    <nav class="quick-nav" aria-label="页面快捷导航">
+      <button
+        v-for="anchor in quickAnchors"
+        :key="anchor.id"
+        class="quick-nav-item"
+        type="button"
+        @click="scrollToSection(anchor.id)"
+      >{{ anchor.label }}</button>
+    </nav>
+
+    <section class="todo-panel" id="sec-notifications" aria-labelledby="notifications-center-title">
       <div class="todo-heading">
         <div class="todo-heading-main">
           <p class="section-kicker">NOTIFICATIONS CENTER</p>
@@ -1038,7 +1079,7 @@ onUnmounted(() => {
               <!-- 个人日程：用带消息人/头像的提醒数据渲染（与"消息提醒"是同一份数据） -->
               <template v-if="kind.rich">
                 <div v-if="ddRemindersLoading" class="remind-empty">加载中…</div>
-                <div v-else-if="ddReminders.length" class="remind-list">
+                <div v-else-if="ddReminders.length" class="remind-list" v-scroll-limit="6">
                   <article
                     v-for="item in ddReminders"
                     :key="item.id"
@@ -1072,7 +1113,7 @@ onUnmounted(() => {
                 <div v-else class="todo-empty">本周（周一至周日）没有日程提醒。</div>
               </template>
 
-              <div v-else-if="kind.items.length" class="todo-list">
+              <div v-else-if="kind.items.length" class="todo-list" v-scroll-limit="6">
                 <article
                   v-for="todo in kind.items"
                   :key="todoKey(todo)"
@@ -1216,7 +1257,7 @@ onUnmounted(() => {
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.approvals.loading" class="sf-card-loading">加载中…</div>
-              <ul v-else-if="sfSections.approvals.items.length" class="sf-list">
+              <ul v-else-if="sfSections.approvals.items.length" class="sf-list" v-scroll-limit="6">
                 <li
                   v-for="it in sfSections.approvals.items"
                   :key="it.id"
@@ -1267,7 +1308,7 @@ onUnmounted(() => {
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.tasks.loading" class="sf-card-loading">加载中…</div>
-              <ul v-else-if="sfSections.tasks.items.length" class="sf-list">
+              <ul v-else-if="sfSections.tasks.items.length" class="sf-list" v-scroll-limit="6">
                 <li
                   v-for="it in sfSections.tasks.items"
                   :key="it.id"
@@ -1308,7 +1349,7 @@ onUnmounted(() => {
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.events.loading" class="sf-card-loading">加载中…</div>
-              <ul v-else-if="sfSections.events.items.length" class="sf-list">
+              <ul v-else-if="sfSections.events.items.length" class="sf-list" v-scroll-limit="6">
                 <li
                   v-for="it in sfSections.events.items"
                   :key="it.id"
@@ -1348,7 +1389,7 @@ onUnmounted(() => {
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.plans.loading" class="sf-card-loading">加载中…</div>
-              <ul v-else-if="sfSections.plans.items.length" class="sf-list">
+              <ul v-else-if="sfSections.plans.items.length" class="sf-list" v-scroll-limit="6">
                 <li
                   v-for="it in sfSections.plans.items"
                   :key="it.id"
@@ -1473,16 +1514,17 @@ onUnmounted(() => {
         </div>
 
         <div class="sf-wb-grid">
-          <!-- OA 待办 -->
+          <!-- OA 待办：未查看的标题标红 -->
           <article class="sf-card" :class="{ live: oaConnected }">
             <header class="sf-card-head">
               <span class="sf-card-dot"></span>
               <h4>我的待办</h4>
+              <span v-if="oaUnreadCount" class="sf-card-unread">{{ oaUnreadCount }} 未读</span>
               <span class="sf-card-count">{{ oaTodos.length }}</span>
             </header>
             <div class="sf-card-body">
               <div v-if="oaLoading" class="sf-card-loading">加载中…</div>
-              <ul v-else-if="oaTodos.length" class="sf-list">
+              <ul v-else-if="oaTodos.length" class="sf-list" v-scroll-limit="6">
                 <li
                   v-for="it in oaTodos"
                   :key="it.id"
@@ -1490,7 +1532,7 @@ onUnmounted(() => {
                   @click="openUrl(it.url)"
                 >
                   <div class="sf-list-copy">
-                    <strong>{{ it.title }}</strong>
+                    <strong :class="{ 'is-unread': it.unread }">{{ it.title }}</strong>
                     <span>{{ it.creator ? `发起人 ${it.creator}` : 'OA 待办' }}</span>
                   </div>
                   <span class="sf-due">{{ it.due || '无期限' }}</span>
@@ -1510,15 +1552,54 @@ onUnmounted(() => {
               <button class="sf-quick-action ghost" type="button" :disabled="oaLoading" @click="loadOaTodos">刷新</button>
             </footer>
           </article>
+
+          <!-- OA 公文：走协同工作（cowork），未查看的标题标红 -->
+          <article class="sf-card" :class="{ live: oaConnected }">
+            <header class="sf-card-head">
+              <span class="sf-card-dot"></span>
+              <h4>公文</h4>
+              <span v-if="oaCoworkUnreadCount" class="sf-card-unread">{{ oaCoworkUnreadCount }} 未读</span>
+              <span class="sf-card-count">{{ oaCowork.length }}</span>
+            </header>
+            <div class="sf-card-body">
+              <div v-if="oaCoworkLoading" class="sf-card-loading">加载中…</div>
+              <ul v-else-if="oaCowork.length" class="sf-list" v-scroll-limit="6">
+                <li
+                  v-for="it in oaCowork"
+                  :key="it.id"
+                  class="sf-list-item"
+                  @click="openUrl(it.url)"
+                >
+                  <div class="sf-list-copy">
+                    <strong :class="{ 'is-unread': it.unread }">{{ it.title }}</strong>
+                    <span>{{ it.creator ? `${it.creator} 发布` : 'OA 公文' }}</span>
+                  </div>
+                  <span class="sf-due">{{ it.due || '' }}</span>
+                </li>
+              </ul>
+              <div v-else class="sf-card-empty">
+                <template v-if="oaConnected">
+                  当前没有公文。
+                </template>
+                <template v-else>
+                  <p>公司 OA 尚未配置或取数失败。</p>
+                  <button class="sf-link" type="button" @click="router.push('/settings/integrations')">去配置 ↗</button>
+                </template>
+              </div>
+            </div>
+            <footer class="sf-card-actions">
+              <button class="sf-quick-action ghost" type="button" :disabled="oaCoworkLoading" @click="loadOaCowork">刷新</button>
+            </footer>
+          </article>
         </div>
       </section>
       </div>
     </section>
 
 
-    <section class="module-panel">
+    <section class="module-panel" id="sec-work-modules">
       <div class="panel-heading">
-        <h3>部门工作模块</h3>
+        <h3>Work Modules</h3>
         <!-- 管理员的账号入口：放在这里比只藏在头像菜单里更容易找到 -->
         <button v-if="isAdminUser" class="panel-link" type="button" @click="router.push('/account')">
           账号管理 ↗
@@ -1560,9 +1641,9 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="module-panel">
+    <section class="module-panel" id="sec-report">
       <div class="panel-heading">
-        <h3>分析报表</h3>
+        <h3>Report</h3>
       </div>
       <div class="regions-grid">
         <section

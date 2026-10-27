@@ -7,8 +7,9 @@ node_modules/
 # 构建产物：**要精确到目录**。写裸 `dist/` 会匹配任意层级，
 # 导致 modules/service_demand/frontend/dist 里的新文件加不进 git
 # （老文件能删、新文件被挡，提交上去 index.html 会引用不存在的 assets）。
+# 注意：home/dist **要入库** —— 服务器部署不装 Node，clone 下来直接用构建产物。
+# （2026-10-27 修：之前 home/dist/ 在这里被挡，git 里从来没有过前端产物，服务器 clone 后白屏。）
 /dist/
-home/dist/
 platform/tools/dist/
 .DS_Store
 uploads/

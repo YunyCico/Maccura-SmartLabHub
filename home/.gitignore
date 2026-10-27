@@ -8,7 +8,10 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# dist **要入库**：服务器部署不装 Node，clone 下来直接用构建产物。
+# （2026-10-27 修：之前 `dist` 把它挡了，git 里从来没有过前端产物，
+#   服务器 clone 后平台会白屏。）
+!dist/
 dist-ssr
 *.local
 
