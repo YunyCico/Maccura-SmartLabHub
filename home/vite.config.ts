@@ -66,6 +66,10 @@ export default defineConfig({
       // 部署到服务器后那个地址指的是用户自己的电脑，必然白屏）。
       // 本地开发也必须一起代理，否则 5173 上点「数据分析」会 404。
       '/engine': { target, configure },
+      // 服务需求报表通过 /portal/ 内嵌。这条**漏了会套娃**：
+      // Vite 的 SPA 兜底会把平台自己的 index.html 返回给 iframe，
+      // 看起来就是"平台里套了一个平台"。
+      '/portal': { target, configure },
     },
   },
 })

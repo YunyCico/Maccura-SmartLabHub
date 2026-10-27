@@ -236,6 +236,15 @@ if (_DIST_DIR / "index.html").is_file():
         """把非接口路径交给前端路由处理。"""
         if full_path.startswith("api/"):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
+        # /engine 和 /portal 是内嵌子应用，必须由各自的挂载点处理。
+        # 万一挂载没成功（比如模块目录缺失），绝不能把平台自己的 index.html
+        # 当成它们的页面返回 —— 那会让 iframe 里出现"平台套平台"，
+        # 看着像渲染 bug，实际是路由回落。宁可明确 404。
+        if full_path.startswith(("engine/", "portal/")) or full_path in ("engine", "portal"):
+            return JSONResponse(
+                {"detail": "内嵌模块未挂载，请检查后端启动日志", "path": full_path},
+                status_code=404,
+            )
         candidate = (_DIST_DIR / full_path).resolve()
         try:
             # 防目录穿越：解析后的路径必须仍在 dist 目录内
