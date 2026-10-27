@@ -46,6 +46,10 @@ function onLoad() {
   }
 }
 
+function goHome() {
+  router.push('/')
+}
+
 function reload() {
   loading.value = true
   error.value = ''
@@ -66,19 +70,16 @@ onMounted(() => {
 
 <template>
   <section class="report-page">
-    <header class="report-head">
-      <div>
-        <p class="report-kicker">部门工作模块</p>
-        <h1>服务需求报表</h1>
-        <p class="report-sub">按条件从数据中台拉取服务需求明细，自动生成 KPI 看板与分析图表。</p>
-      </div>
-      <div class="report-actions">
-        <button type="button" @click="router.push('/')">← 回工作台</button>
+    <!-- 不再自建标题栏：报表自己顶部就有「数据中台 / 数据拉取 / BI 看板」，
+         再叠一层平台标题只会让顶部占掉两行。回工作台/重新加载已并入报表工具栏。 -->
+    <p v-if="error" class="report-banner">
+      <span>{{ error }}</span>
+      <span class="report-banner-actions">
         <button type="button" @click="reload">重新加载</button>
-      </div>
-    </header>
-
-    <p v-if="error" class="report-banner">{{ error }}</p>
+        <!-- 报表没加载出来时，它工具栏里的「回工作台」也就不存在了，这里兜一个 -->
+        <button type="button" @click="goHome">← 回工作台</button>
+      </span>
+    </p>
 
     <div class="report-frame-wrap">
       <div v-if="loading" class="report-loading">报表加载中…</div>
@@ -98,37 +99,30 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: calc(100vh - clamp(60px, 3vw, 84px));
-  padding: 20px clamp(16px, 2vw, 36px) 24px;
+  padding: 16px clamp(16px, 2vw, 36px) 24px;
 }
-.report-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  padding-bottom: 14px;
-}
-.report-kicker { margin: 0 0 3px; color: var(--muted); font-size: 12px; }
-.report-head h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
-.report-sub { margin: 0; color: var(--muted); font-size: 12.5px; }
-.report-actions { display: flex; gap: 8px; flex: 0 0 auto; }
-.report-actions button {
-  padding: 7px 16px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--ink);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: border-color .18s, color .18s;
-}
-.report-actions button:hover { border-color: var(--blue); color: var(--blue); }
 .report-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0 0 10px;
   padding: 9px 14px;
   border-radius: 10px;
   background: #fdecec;
   color: #b3261e;
   font-size: 12.5px;
+}
+.report-banner-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.report-banner button {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border: 1px solid rgba(179, 38, 30, .35);
+  border-radius: 999px;
+  background: #fff;
+  color: #b3261e;
+  font-size: 12px;
+  cursor: pointer;
 }
 .report-frame-wrap {
   position: relative;

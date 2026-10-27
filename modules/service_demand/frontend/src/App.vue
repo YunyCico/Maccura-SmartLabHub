@@ -14,6 +14,29 @@ const apiBase = ref('')
 const operators = ref([])
 const tableFields = ref({})
 
+/* 被 SmartLabHub 用 iframe 嵌进来时，顶栏多两个「平台导航」按钮。
+   独立运行时（双击 启动控制台.bat）不显示 —— 那时候没有"回工作台"可回。 */
+const embedded = computed(() => {
+  try {
+    return window.parent !== window
+  } catch {
+    return false
+  }
+})
+
+function goHome() {
+  try {
+    // 同源，可以直接操作顶层窗口
+    window.top.location.href = '/'
+  } catch {
+    window.location.href = '/'
+  }
+}
+
+function reloadSelf() {
+  window.location.reload()
+}
+
 // 右侧结果区是独立滚动容器，导航跳转要滚它而不是 window
 function scrollStage(target) {
   const stage = document.querySelector('.stage')
@@ -161,6 +184,11 @@ onMounted(async () => {
           <a href="#bi-dashboard" @click.prevent="scrollStage('bi-dashboard')">BI 看板</a>
         </nav>
         <div class="topbar-spacer"></div>
+        <!-- 嵌在平台里时才出现：回工作台 / 重新加载 -->
+        <div v-if="embedded" class="embed-actions">
+          <button class="btn sample-button" @click="goHome">← 回工作台</button>
+          <button class="btn sample-button" @click="reloadSelf">重新加载</button>
+        </div>
         <div class="conn">
           <span class="dot" :class="conn.state"></span><span>{{ conn.text }}</span>
         </div>

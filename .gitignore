@@ -4,7 +4,12 @@ __pycache__/
 .env
 .pytest_cache/
 node_modules/
-dist/
+# 构建产物：**要精确到目录**。写裸 `dist/` 会匹配任意层级，
+# 导致 modules/service_demand/frontend/dist 里的新文件加不进 git
+# （老文件能删、新文件被挡，提交上去 index.html 会引用不存在的 assets）。
+/dist/
+home/dist/
+platform/tools/dist/
 .DS_Store
 uploads/
 exports/

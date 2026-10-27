@@ -84,6 +84,8 @@ body {
 .nav-links a:hover { opacity: 1; color: var(--accent); }
 
 .topbar-spacer { flex: 1; }
+/* 被平台内嵌时顶栏多出来的「回工作台 / 重新加载」 */
+.embed-actions { display: flex; align-items: center; gap: 8px; }
 
 .conn {
   display: flex; align-items: center; gap: 7px;

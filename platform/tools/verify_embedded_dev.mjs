@@ -209,6 +209,41 @@ async function main() {
       `isPlatform=${sd?.isPlatform} title=${sd?.title}`);
     check('服务需求报表是真的报表页', Boolean(sd && /数据中台|DataFetch/.test(sd.title || '')),
       sd?.title || '');
+    // 平台自己那层标题栏应该已经删掉了（不然顶部白白占两行）
+    const ownHeader = await page.evalJson(
+      `(function(){
+        return {
+          hasHead: !!document.querySelector('.report-head'),
+          hasTitle: !!document.querySelector('.report-page > header'),
+        };
+      })()`,
+      await ctx(),
+    );
+    check('平台自建标题栏已删除', !ownHeader.hasHead && !ownHeader.hasTitle, JSON.stringify(ownHeader));
+
+    // 回工作台/重新加载 应该在报表自己的工具栏里（不是平台层）
+    const embedButtons = await page.evalJson(`(function () {
+      var f = document.querySelector('iframe.report-frame');
+      if (!f || !f.contentDocument) return { found: false };
+      var d = f.contentDocument;
+      var bar = d.querySelector('.embed-actions');
+      var labels = bar ? [...bar.querySelectorAll('button')].map(function (b) { return b.textContent.trim(); }) : [];
+      // 确认它和「连接检测 / 重新获取」在同一行
+      var sameRow = false;
+      if (bar) {
+        var refresh = [...d.querySelectorAll('.topbar-inner button')].find(function (b) {
+          return /重新获取|获取中/.test(b.textContent);
+        });
+        if (refresh) {
+          var a = bar.getBoundingClientRect(), c = refresh.getBoundingClientRect();
+          sameRow = Math.abs(a.top + a.height / 2 - (c.top + c.height / 2)) < 12;
+        }
+      }
+      return { found: !!bar, labels: labels, sameRow: sameRow };
+    })()`, await ctx());
+    check('按钮已并入报表工具栏', Boolean(embedButtons.found), (embedButtons.labels || []).join(' / '));
+    check('与「连接检测/重新获取」同一行', embedButtons.sameRow === true, `sameRow=${embedButtons.sameRow}`);
+
     const sdError = await page.evalJson(
       `(function(){ var b=document.querySelector('.report-banner'); return { text: b ? b.textContent.trim() : '' }; })()`,
       await ctx(),
@@ -241,7 +276,19 @@ async function main() {
 
     try {
       await page.send('Page.navigate', { url: `${FRONTEND}/service-demand` });
-      await sleep(2000);
+      // 等 iframe 里真正渲染完（加载遮罩消失）再截图，否则拍到"报表加载中…"
+      for (let i = 0; i < 20; i++) {
+        await sleep(800);
+        const ready = await page.evalJson(`(function () {
+          var f = document.querySelector('iframe.report-frame');
+          var mask = document.querySelector('.report-loading');
+          if (!f || !f.contentDocument) return false;
+          var d = f.contentDocument;
+          return !mask && d.body && d.body.innerText.trim().length > 200;
+        })()`, await ctx()).catch(() => false);
+        if (ready) break;
+      }
+      await sleep(600);
       const shot = await page.send('Page.captureScreenshot', { format: 'png' });
       const shotPath = path.join(os.tmpdir(), 'slh_dev_embedded.png');
       writeFileSync(shotPath, Buffer.from(shot.result.data, 'base64'));
