@@ -21,3 +21,11 @@ backup/_migration/
 logs/
 shots/
 *.log
+
+# 排查过程的临时产物：不参与版本管理
+#  - /db        某次调试把表结构 dump 存成了根目录的 db 文件（不是数据库）
+#  - _*.png     验证脚本留下的截图/测试图
+#  - _backup/   脚本改写前的 xlsx 备份
+/db
+platform/tools/_backup/
+platform/tools/_*.png
