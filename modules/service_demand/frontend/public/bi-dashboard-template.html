@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>服务需求BI看板</title>
 <!-- 本地化依赖：内网无法访问公网 CDN -->
-<script src="/vendor/echarts.min.js"></script>
+<script src="vendor/echarts.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
@@ -139,7 +139,7 @@ a.save-btn{display:inline-block;text-decoration:none;line-height:1.4}
             <div id="updateTime">更新时间：2026/10/20 14:34:40</div>
         </div>
         <button class="import-btn" onclick="loadFromBackend(true)">重新加载平台数据</button>
-        <a class="save-btn" href="/api/bi/export.xlsx" download>下载 Excel</a>
+        <a class="save-btn" href="api/bi/export.xlsx" download>下载 Excel</a>
         <button class="save-btn" onclick="saveData()" title="将当前最新数据写入 HTML 文件，下次打开即为新数据">保存数据</button>
         <button class="clear-btn" onclick="clearData()" title="清空当前全部数据（含图表与明细），可再重新加载平台数据">清空数据</button>
     </div>

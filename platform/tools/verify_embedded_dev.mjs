@@ -274,6 +274,33 @@ async function main() {
     );
     check('页面没有报错提示', !sdError.text, sdError.text);
 
+    // ---- BI 看板：内嵌的 iframe 不能再走绝对路径，否则整块空白
+    let bi = null;
+    for (let i = 0; i < 30; i++) {
+      await sleep(1000);
+      bi = await page.evalJson(`(function () {
+        var outer = document.querySelector('iframe.report-frame');
+        if (!outer || !outer.contentDocument) return { stage: 'no-outer' };
+        var od = outer.contentDocument;
+        var inner = od.querySelector('iframe.bi-frame');
+        if (!inner) return { stage: 'no-bi-frame' };
+        var doc = inner.contentDocument;
+        return {
+          stage: 'ok',
+          src: inner.getAttribute('src'),
+          hasDoc: !!doc,
+          bodyLen: doc && doc.body ? doc.body.innerText.trim().length : 0,
+          canvases: doc ? doc.querySelectorAll('canvas').length : 0,
+        };
+      })()`, await ctx()).catch(() => ({ stage: 'error' }));
+      if (bi && bi.stage === 'ok') break;
+    }
+    check('BI 看板 iframe 出现了', Boolean(bi && bi.stage === 'ok'), `stage=${bi?.stage}`);
+    check('BI 看板 src 带 /portal 前缀', /^\/portal\/bi-dashboard-template/.test(bi?.src || ''), bi?.src || '');
+    check('BI 看板渲染出内容（不是空白）',
+      Boolean(bi && bi.bodyLen > 100), `正文字数=${bi?.bodyLen}`);
+    check('BI 看板图表已绘制', Boolean(bi && bi.canvases > 0), `canvas=${bi?.canvases}`);
+
     // ---- 数据分析（/engine）
     await page.send('Page.navigate', { url: `${FRONTEND}/data-analysis` });
     await sleep(2500);

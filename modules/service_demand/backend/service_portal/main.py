@@ -615,12 +615,12 @@ def bi_export_html():
     if vendor.exists():
         lib = vendor.read_text(encoding="utf-8")
         template = template.replace(
-            '<script src="/vendor/echarts.min.js"></script>',
+            '<script src="vendor/echarts.min.js"></script>',
             "<script>\n/* ECharts 5.5.0 (Apache-2.0) 内联 */\n" + lib + "\n</script>",
         )
     else:
         template = template.replace(
-            '<script src="/vendor/echarts.min.js"></script>',
+            '<script src="vendor/echarts.min.js"></script>',
             "<script>/* 未找到本地 ECharts，离线打开时图表不可用 */</script>",
         )
 

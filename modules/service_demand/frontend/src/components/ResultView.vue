@@ -397,7 +397,7 @@ const pagingInfo = computed(() =>
           字段对应关系由「字段对应表」决定：在上表里把「取数字段」改成真实表字段名即可，
           改完点「刷新看板」即可看到新报表；「候选字段清单」页列出了全部 66 个可选字段。
         </p>
-        <iframe class="bi-frame" :key="biKey" src="/bi-dashboard-template.html" title="服务质量需求 BI 看板"></iframe>
+        <iframe class="bi-frame" :key="biKey" :src="withBase('/bi-dashboard-template.html')" title="服务质量需求 BI 看板"></iframe>
       </div>
     </div>
 
