@@ -221,28 +221,47 @@ async function main() {
     );
     check('平台自建标题栏已删除', !ownHeader.hasHead && !ownHeader.hasTitle, JSON.stringify(ownHeader));
 
-    // 回工作台/重新加载 应该在报表自己的工具栏里（不是平台层）
-    const embedButtons = await page.evalJson(`(function () {
+    // 结构：原顶栏已拆成「侧栏品牌」+「内容区操作组」
+    const structure = await page.evalJson(`(function () {
       var f = document.querySelector('iframe.report-frame');
-      if (!f || !f.contentDocument) return { found: false };
+      if (!f || !f.contentDocument) return { ok: false };
       var d = f.contentDocument;
-      var bar = d.querySelector('.embed-actions');
-      var labels = bar ? [...bar.querySelectorAll('button')].map(function (b) { return b.textContent.trim(); }) : [];
-      // 确认它和「连接检测 / 重新获取」在同一行
-      var sameRow = false;
-      if (bar) {
-        var refresh = [...d.querySelectorAll('.topbar-inner button')].find(function (b) {
-          return /重新获取|获取中/.test(b.textContent);
-        });
-        if (refresh) {
-          var a = bar.getBoundingClientRect(), c = refresh.getBoundingClientRect();
-          sameRow = Math.abs(a.top + a.height / 2 - (c.top + c.height / 2)) < 12;
-        }
-      }
-      return { found: !!bar, labels: labels, sameRow: sameRow };
+      var actions = d.querySelector('.stage-actions');
+      var sideHead = d.querySelector('.side-head');
+      var g = function (el) { return el ? getComputedStyle(el) : null; };
+      var labels = actions ? [...actions.querySelectorAll('button')].map(function (b) { return b.textContent.trim(); }) : [];
+      return {
+        ok: true,
+        hasOldTopbar: !!d.querySelector('.topbar'),
+        hasSideHead: !!sideHead,
+        sideTabs: sideHead ? [...sideHead.querySelectorAll('.side-tabs a')].map(function (a) { return a.textContent.trim(); }) : [],
+        hasStageActions: !!actions,
+        actionLabels: labels,
+        // 关键：这几块都不能是 sticky/fixed，否则滚动时一直占着顶部
+        actionsPosition: g(actions) ? g(actions).position : '',
+        sideHeadPosition: g(sideHead) ? g(sideHead).position : '',
+      };
     })()`, await ctx());
-    check('按钮已并入报表工具栏', Boolean(embedButtons.found), (embedButtons.labels || []).join(' / '));
-    check('与「连接检测/重新获取」同一行', embedButtons.sameRow === true, `sameRow=${embedButtons.sameRow}`);
+    check('旧顶栏已移除', structure.hasOldTopbar === false);
+    check('品牌与页内导航已到侧栏', structure.hasSideHead && (structure.sideTabs || []).length === 2,
+      (structure.sideTabs || []).join(' / '));
+    check('操作组已到内容区右上', structure.hasStageActions, (structure.actionLabels || []).join(' / '));
+    check('操作组不吸附（往下滑跟着走）', structure.actionsPosition === 'static', `position=${structure.actionsPosition}`);
+    check('侧栏头部不吸附', structure.sideHeadPosition === 'static', `position=${structure.sideHeadPosition}`);
+
+    // 平台顶栏在满屏页上也不再吸顶，并且整页不应有滚动条（只让内嵌页面自己滚）
+    const shell = await page.evalJson(`(function () {
+      var bar = document.querySelector('.brand-bar');
+      var shell = document.querySelector('.app-shell');
+      var de = document.documentElement;
+      return {
+        brandPosition: bar ? getComputedStyle(bar).position : '',
+        shellClass: shell ? shell.className : '',
+        scrolls: de.scrollHeight - de.clientHeight,
+      };
+    })()`, await ctx());
+    check('平台顶栏在满屏页不吸顶', shell.brandPosition === 'static', `position=${shell.brandPosition}`);
+    check('整页不再多出滚动条', shell.scrolls <= 2, `溢出 ${shell.scrolls}px`);
 
     // 布局：四周不该留框（没有外层留白、没有圆角边框，iframe 顶到边）
     const layout = await page.evalJson(`(function () {

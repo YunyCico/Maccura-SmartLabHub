@@ -98,8 +98,11 @@ onMounted(() => {
 .report-page {
   display: flex;
   flex-direction: column;
-  /* 铺满：外层的边距/圆角边框由 .workspace-full 和下面的 wrap 一起取消 */
-  height: calc(100vh - clamp(60px, 3vw, 84px));
+  /* 铺满：外层的边距/圆角边框由 .workspace-full 和下面的 wrap 一起取消。
+     用 100% 而不是 100vh 减顶栏 —— 后者只要顶栏实际高度差几像素，
+     页面就会多出一条滚动条，白白少一截可见区域。 */
+  height: 100%;
+  min-height: 0;
 }
 .report-banner {
   display: flex;

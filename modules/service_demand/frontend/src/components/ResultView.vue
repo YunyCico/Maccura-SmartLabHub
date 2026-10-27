@@ -215,12 +215,11 @@ const pagingInfo = computed(() =>
           </p>
         </div>
       </div>
-      <button class="btn btn-primary" @click="emit('refresh')">刷新数据</button>
     </div>
 
     <div v-if="isSample" class="alert alert-info sample-notice">
       <strong>当前显示的是演示数据，不是数据中台实时数据。</strong><br />
-      要核对真实数据，请点击右上角「刷新数据」重新获取。
+      要核对真实数据，请点击右上角「重新获取」。
     </div>
 
     <div v-if="zeroRows > 0" class="alert alert-warn">

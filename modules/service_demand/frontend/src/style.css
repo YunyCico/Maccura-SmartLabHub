@@ -50,41 +50,51 @@ body {
 /* ---------- 布局 ---------- */
 .shell { display: flex; flex-direction: column; height: 100%; }
 
-/* Apple 式全局导航：毛玻璃 + 细底线 */
-.topbar {
-  flex: 0 0 var(--nav-h);
-  height: var(--nav-h);
-  background: rgba(245, 245, 247, .8);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  z-index: 10;
-}
-.topbar-inner {
-  height: 100%; display: flex; align-items: center; gap: 18px;
-  padding: 0 24px;
-}
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* 顶部不再有整条导航栏：
+   品牌和页内导航挪到左侧栏顶部（.side-head），操作按钮挪到内容区右上（.stage-actions）。
+   这样页面顶部不再常驻一行，垂直可见区域多出约一个顶栏的高度。 */
 .brand-mark {
   width: 28px; height: 28px; border-radius: 8px; flex: 0 0 28px;
   background: #1d1d1f; color: #fff;
   display: grid; place-items: center;
 }
 .brand-mark svg { width: 16px; height: 16px; display: block; }
-.brand-text h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
-.brand-text p { margin: 1px 0 0; font-size: 11px; color: var(--text-3); }
 
-/* 导航链接（Apple 全局导航样式） */
-.nav-links { display: flex; align-items: center; gap: 22px; }
-.nav-links a {
-  font-size: 12px; color: var(--text-1); text-decoration: none;
-  opacity: .85; transition: opacity .2s; white-space: nowrap;
+/* ---- 侧栏顶部的品牌 + 页内导航 ---- */
+.side-head {
+  margin: -20px -20px 16px;      /* 抵消 .sidebar 的 padding，做成通栏头部 */
+  padding: 16px 20px 14px;
+  background: rgba(245, 245, 247, .85);
+  border-bottom: 1px solid var(--border-soft);
 }
-.nav-links a:hover { opacity: 1; color: var(--accent); }
+.side-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.side-brand-text { min-width: 0; }
+.side-brand-text strong {
+  display: block; font-size: 14px; font-weight: 700;
+  letter-spacing: -.01em; color: var(--text-1);
+}
+.side-brand-text span {
+  display: block; font-size: 11px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.side-tabs { display: flex; gap: 6px; margin-top: 12px; }
+.side-tabs a {
+  flex: 1; text-align: center; padding: 6px 0; border-radius: 8px;
+  font-size: 12px; color: var(--text-1); text-decoration: none;
+  background: rgba(0, 0, 0, .045);
+  transition: background .18s, color .18s;
+}
+.side-tabs a:hover { background: rgba(0, 113, 227, .1); color: var(--accent); }
 
-.topbar-spacer { flex: 1; }
-/* 被平台内嵌时顶栏多出来的「回工作台 / 重新加载」 */
+/* ---- 内容区右上角的操作组 ----
+   ⚠️ 刻意**不**做 sticky：页面往下滑时它跟着一起走，
+      否则一直钉在顶部会白占一条可见区域。 */
+.stage-actions {
+  display: flex; align-items: center; justify-content: flex-end;
+  flex-wrap: wrap; gap: 10px;
+  margin: 0 0 14px;
+}
+/* 被平台内嵌时多出来的「回工作台 / 重新加载」 */
 .embed-actions { display: flex; align-items: center; gap: 8px; }
 
 .conn {
@@ -538,12 +548,10 @@ a:hover { text-decoration: underline; }
 @media (max-width: 900px) {
   .body { grid-template-columns: minmax(300px, 360px) 1fr; }
   .stage { padding-left: 16px; padding-right: 16px; }
-  .nav-links { display: none; }
+  .side-tabs { display: none; }
 }
 @media (max-width: 720px) {
-  .topbar { padding: 0; }
-  .topbar-inner { padding: 0 14px; gap: 10px; }
-  .brand-text p { display: none; }
+  .side-brand-text span { display: none; }
   .conn { max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .body { display: block; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border-soft); max-height: none; }

@@ -38,6 +38,12 @@ button { font: inherit; }
 .workspace { flex: 1; width: 100%; max-width: 2000px; margin: 0 auto; padding: 0 40px 80px; }
 /* 满屏页（内嵌整页模块）：去掉左右留白、底部留白和最大宽度，让内容顶到边 */
 .workspace.workspace-full { max-width: none; padding: 0; }
+
+/* 满屏页（内嵌整页模块）：
+   1) 顶栏**不再吸顶** —— 往下滑就跟着走，把这块高度还给内容
+   2) 外壳高度锁死，只让内嵌页面自己滚，避免外面再冒一条滚动条 */
+.app-shell.shell-full { height: 100dvh; overflow: hidden; }
+.app-shell.shell-full .brand-bar { position: static; }
 .topbar { padding: 56px 0 6px; text-align: center; }
 h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weight: 650; letter-spacing: -.02em; line-height: 1.08; }
 
@@ -552,6 +558,22 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .sf-approval-field dd { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .sf-approval-fallback { color: var(--muted); font-size: 11.5px; }
 .sf-list-item:hover .sf-list-copy strong { color: #a45d00; }
+
+/* 未查看的条目：标题标红加粗（待办 + 公文共用）。
+   判据来自后端：OA 待办看表格 XML 的 e8_table_new；公文看「未读公文」图标。 */
+.sf-list-copy strong.is-unread { color: #d92d20; font-weight: 700; }
+.sf-list-item:hover .sf-list-copy strong.is-unread { color: #b42318; }
+
+/* 未读计数徽标：卡片标题右侧的「N 未读」 */
+.sf-card-unread {
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #d92d20;
+  background: #fee4e2;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+}
 .sf-arrow { flex: none; color: var(--muted); font-size: 14px; }
 .sf-due { flex: none; padding: 3px 9px; border-radius: 999px; font-size: 11px; color: #28764d; background: #e9f7ef; }
 .sf-due.overdue { color: #c2410c; background: #fff1e8; }

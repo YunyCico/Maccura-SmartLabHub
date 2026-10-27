@@ -52,7 +52,7 @@ onMounted(() => {
   <!-- 登录页 / 首次设置页：纯页面，不套外壳 -->
   <RouterView v-if="isBare" />
 
-  <div v-else class="app-shell">
+  <div v-else class="app-shell" :class="{ 'shell-full': isFullBleed }">
     <header class="brand-bar">
       <div class="brand-lockup">
         <span class="brand-maccura">maccura</span>

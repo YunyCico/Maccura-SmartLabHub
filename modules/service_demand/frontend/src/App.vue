@@ -166,42 +166,6 @@ onMounted(async () => {
 
 <template>
   <div class="shell">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div class="brand">
-          <div class="brand-mark">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M16.36 12.78c.02 2.6 2.28 3.47 2.3 3.48-.02.06-.36 1.24-1.2 2.46-.72 1.05-1.47 2.1-2.66 2.12-1.16.02-1.54-.69-2.87-.69-1.33 0-1.75.67-2.85.71-1.14.04-2.01-1.13-2.74-2.18-1.5-2.17-2.64-6.14-1.1-8.82.76-1.33 2.13-2.17 3.61-2.19 1.12-.02 2.17.75 2.87.75.69 0 1.98-.93 3.33-.79.57.02 2.17.21 3.2 1.6-.08.05-1.91 1.12-1.89 3.55M14.3 4.9c.61-.74 1.02-1.77.91-2.8-.88.04-1.94.59-2.57 1.32-.56.65-1.05 1.69-.92 2.69.98.08 1.97-.5 2.58-1.21"/>
-            </svg>
-          </div>
-          <div class="brand-text">
-            <h1>数据中台</h1>
-            <p>Xenon 数据中台 · 业务数据查询</p>
-          </div>
-        </div>
-        <nav class="nav-links">
-          <a href="#stage" @click.prevent="scrollStage(0)">数据拉取</a>
-          <a href="#bi-dashboard" @click.prevent="scrollStage('bi-dashboard')">BI 看板</a>
-        </nav>
-        <div class="topbar-spacer"></div>
-        <!-- 嵌在平台里时才出现：回工作台 / 重新加载 -->
-        <div v-if="embedded" class="embed-actions">
-          <button class="btn sample-button" @click="goHome">← 回工作台</button>
-          <button class="btn sample-button" @click="reloadSelf">重新加载</button>
-        </div>
-        <div class="conn">
-          <span class="dot" :class="conn.state"></span><span>{{ conn.text }}</span>
-        </div>
-        <button class="btn" @click="check" :disabled="conn.state === 'loading'">
-          <span v-if="conn.state === 'loading'" class="spin"></span>
-          {{ conn.state === 'loading' ? '检测中' : '连接检测' }}
-        </button>
-        <button class="btn btn-primary" @click="runPull" :disabled="busy">
-          {{ busy ? '获取中' : '重新获取' }}
-        </button>
-      </div>
-    </header>
-
     <section class="hero">
       <p class="hero-kicker">DataFetch Portal</p>
       <h2 class="hero-title">服务需求数据，<span class="hero-gradient">打开即得。</span></h2>
@@ -210,6 +174,26 @@ onMounted(async () => {
 
     <div class="body">
       <aside class="sidebar">
+        <!-- 原顶栏左侧的品牌与页内导航挪到这里：
+             顶栏整条去掉后，页面顶部不再多占一行 -->
+        <div class="side-head">
+          <div class="side-brand">
+            <div class="brand-mark">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M16.36 12.78c.02 2.6 2.28 3.47 2.3 3.48-.02.06-.36 1.24-1.2 2.46-.72 1.05-1.47 2.1-2.66 2.12-1.16.02-1.54-.69-2.87-.69-1.33 0-1.75.67-2.85.71-1.14.04-2.01-1.13-2.74-2.18-1.5-2.17-2.64-6.14-1.1-8.82.76-1.33 2.13-2.17 3.61-2.19 1.12-.02 2.17.75 2.87.75.69 0 1.98-.93 3.33-.79.57.02 2.17.21 3.2 1.6-.08.05-1.91 1.12-1.89 3.55M14.3 4.9c.61-.74 1.02-1.77.91-2.8-.88.04-1.94.59-2.57 1.32-.56.65-1.05 1.69-.92 2.69.98.08 1.97-.5 2.58-1.21"/>
+            </svg>
+            </div>
+            <div class="side-brand-text">
+              <strong>数据中台</strong>
+              <span>Xenon 数据中台 · 业务数据查询</span>
+            </div>
+          </div>
+          <nav class="side-tabs">
+            <a href="#stage" @click.prevent="scrollStage(0)">数据拉取</a>
+            <a href="#bi-dashboard" @click.prevent="scrollStage('bi-dashboard')">BI 看板</a>
+          </nav>
+        </div>
+
         <ConfigPanel
           :conn="conn" :username="pullForm.username" :api-base="apiBase" @saved="check" />
 
@@ -227,6 +211,24 @@ onMounted(async () => {
       </aside>
 
       <main class="stage" id="stage">
+        <!-- 原顶栏右侧的操作组挪到内容区右上角；sticky 让它滚动时也够得着 -->
+        <div class="stage-actions">
+          <div v-if="embedded" class="embed-actions">
+            <button class="btn sample-button" @click="goHome">← 回工作台</button>
+            <button class="btn sample-button" @click="reloadSelf">重新加载</button>
+          </div>
+          <div class="conn">
+            <span class="dot" :class="conn.state"></span><span>{{ conn.text }}</span>
+          </div>
+          <button class="btn" @click="check" :disabled="conn.state === 'loading'">
+            <span v-if="conn.state === 'loading'" class="spin"></span>
+            {{ conn.state === 'loading' ? '检测中' : '连接检测' }}
+          </button>
+          <button class="btn btn-primary" @click="runPull" :disabled="busy">
+            {{ busy ? '获取中' : '重新获取' }}
+          </button>
+        </div>
+
         <ResultView :result="result" :busy="busy" :history="history" @refresh="runPull" />
       </main>
     </div>
