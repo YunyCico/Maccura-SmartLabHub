@@ -37,3 +37,10 @@ platform/tools/_*.png
 
 # 备份产物（含账号库和数据，绝不能进库）
 /backups/
+
+# 账号迁移的导出文件：**含 scrypt 密码摘要，等同于密码明文**
+# 账号库(*.db) 已经被挡了，但这个 JSON 不会被上面的规则覆盖，必须单独挡。
+accounts_export.json
+platform/backend/accounts_export.json
+platform/tools/_accounts_export*.json
+*.accounts.json
