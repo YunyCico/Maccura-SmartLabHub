@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchDashboardSummary, type DashboardSummary } from '../api/dashboard'
 import { fetchMessages, type MessageFeed, type MessageItem, type MessageSourceKey } from '../api/messages'
 import { api } from '../api/http'
-import { isAdmin } from '../api/auth'
+import { isAdmin, fetchUiPrefs, saveUiPrefs } from '../api/auth'
 import { resolveDingTalkAuthCode } from '../lib/dingtalk'
 import { loginOa, loginSalesforce, disconnectSalesforce, fetchSfTodayTasks, fetchSfMyEvents, fetchSfApprovals, fetchSfWeeklyPlans, fetchOaTodos, fetchOaCowork, disconnectOa, fetchDingtalkReminders, type SfSectionResponse, type OaTodoItem, type DingtalkReminder } from '../api/integrations'
 
@@ -91,6 +91,201 @@ function scrollToSection(id: string) {
   if (!el) return
   el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+
+// ---------- Notifications Center 区块排序 ----------
+// 用户可以拖拽调整：① 三个来源之间的先后 ② 每个来源内部小卡片的先后。
+// 顺序存在账号上（/api/auth/prefs），换电脑/换浏览器打开还是自己排的那套。
+//
+// 为什么用 CSS order 而不是重排 DOM：
+// 三个来源、Salesforce 四张卡、OA 两张卡在模板里是硬编码并列的，
+// 每块都有上百行内容（表单、列表、滚动区）。把它们抽成 v-for 组件
+// 收益太低、回归面太大；用 order 只改视觉顺序，逻辑一行不动。
+
+const NC_SOURCE_KEYS = ['dingtalk', 'salesforce', 'oa'] as const
+type NcGroup = 'sources' | 'dingtalk' | 'salesforce' | 'oa'
+
+/** 各组的默认顺序 —— 也是"新出现的条目"追加到末尾时的基准。 */
+const NC_DEFAULT_ORDER: { sources: string[]; kinds: Record<string, string[]> } = {
+  sources: [...NC_SOURCE_KEYS],
+  kinds: {
+    dingtalk: ['todo', 'calendar', 'trip'],
+    salesforce: ['approvals', 'tasks', 'events', 'plans'],
+    oa: ['todos', 'cowork'],
+  },
+}
+
+const ncOrder = ref<{ sources: string[]; kinds: Record<string, string[]> }>({
+  sources: [...NC_DEFAULT_ORDER.sources],
+  kinds: {
+    dingtalk: [...NC_DEFAULT_ORDER.kinds.dingtalk],
+    salesforce: [...NC_DEFAULT_ORDER.kinds.salesforce],
+    oa: [...NC_DEFAULT_ORDER.kinds.oa],
+  },
+})
+
+/** 把远端/本地的顺序对齐到"当前实际存在的条目"上：
+ *  - 认识的条目保留用户顺序
+ *  - 没见过的（后来新增的卡片）追加到末尾
+ *  - 已经不存在的（比如关掉了某个消息类型）剔除
+ */
+function normalizeNcOrder(raw: unknown): { sources: string[]; kinds: Record<string, string[]> } {
+  const pick = (saved: unknown, defaults: string[]): string[] => {
+    const list = Array.isArray(saved) ? saved.filter((x): x is string => typeof x === 'string') : []
+    const kept = list.filter((id) => defaults.includes(id))
+    const rest = defaults.filter((id) => !kept.includes(id))
+    return [...kept, ...rest]
+  }
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const kinds = (source.kinds && typeof source.kinds === 'object' ? source.kinds : {}) as Record<string, unknown>
+  return {
+    sources: pick(source.sources, NC_DEFAULT_ORDER.sources),
+    kinds: {
+      dingtalk: pick(kinds.dingtalk, NC_DEFAULT_ORDER.kinds.dingtalk),
+      salesforce: pick(kinds.salesforce, NC_DEFAULT_ORDER.kinds.salesforce),
+      oa: pick(kinds.oa, NC_DEFAULT_ORDER.kinds.oa),
+    },
+  }
+}
+
+/** 该组当前的顺序数组。 */
+function groupOrder(group: NcGroup): string[] {
+  return group === 'sources' ? ncOrder.value.sources : (ncOrder.value.kinds[group] || [])
+}
+
+/** 取某条目在组内的位置；不认识的排到最后（拖拽中途新增时也不会跳位）。 */
+function orderOf(group: NcGroup, id: string): number {
+  const index = groupOrder(group).indexOf(id)
+  return index < 0 ? 999 : index
+}
+
+/** 直接生成 style，模板里少写一层函数调用。 */
+function orderStyle(group: NcGroup, id: string) {
+  return { order: orderOf(group, id) }
+}
+
+// 拖拽状态：只记录"谁在拖""谁身上悬停"，不移动 DOM。
+const dragging = ref<{ group: NcGroup; id: string } | null>(null)
+const dropTarget = ref<{ group: NcGroup; id: string } | null>(null)
+
+function isDragging(group: NcGroup, id: string): boolean {
+  return !!dragging.value && dragging.value.group === group && dragging.value.id === id
+}
+function isDropTarget(group: NcGroup, id: string): boolean {
+  return (
+    !!dropTarget.value &&
+    !!dragging.value &&
+    dropTarget.value.group === group &&
+    dropTarget.value.id === id &&
+    !isDragging(group, id)
+  )
+}
+
+function onDragStart(group: NcGroup, id: string, event: DragEvent) {
+  dragging.value = { group, id }
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    // 某些浏览器不设 data 就不触发 drop
+    event.dataTransfer.setData('text/plain', `${group}:${id}`)
+  }
+}
+
+function onDragOver(group: NcGroup, id: string, event: DragEvent) {
+  // 只接受同组内的拖拽，跨组不允许（来源拖进 OA 里没有意义）
+  if (!dragging.value || dragging.value.group !== group) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  if (!isDropTarget(group, id)) dropTarget.value = { group, id }
+}
+
+function onDrop(group: NcGroup, id: string, event: DragEvent) {
+  event.preventDefault()
+  const from = dragging.value
+  const valid = !!from && from.group === group && from.id !== id
+  dragging.value = null
+  dropTarget.value = null
+  if (!valid) return
+  moveTo(group, from!.id, id)
+}
+
+function onDragEnd() {
+  dragging.value = null
+  dropTarget.value = null
+}
+
+/** 把 fromId 移动到 toId 的位置（插到它前面）。 */
+function moveTo(group: NcGroup, fromId: string, toId: string) {
+  const list = group === 'sources'
+    ? ncOrder.value.sources
+    : (ncOrder.value.kinds[group] = groupOrder(group).slice())
+  const from = list.indexOf(fromId)
+  const to = list.indexOf(toId)
+  if (from < 0 || to < 0 || from === to) return
+  list.splice(from, 1)
+  list.splice(to, 0, fromId)
+  scheduleSaveNcOrder()
+}
+
+/** 键盘/无拖拽时的兜底：向上/向下挪一位。 */
+function nudge(group: NcGroup, id: string, delta: number) {
+  const list = groupOrder(group)
+  const index = list.indexOf(id)
+  const next = index + delta
+  if (index < 0 || next < 0 || next >= list.length) return
+  if (group === 'sources') ncOrder.value.sources = list.slice()
+  else ncOrder.value.kinds[group] = list.slice()
+  const arr = groupOrder(group)
+  ;[arr[index], arr[next]] = [arr[next], arr[index]]
+  scheduleSaveNcOrder()
+}
+
+// 保存：拖拽时别每动一下就发请求，攒 600ms 再发。
+// prefsCache 保存的是"后端返回的完整偏好"，我们只替换其中的 nc 键，
+// 免得将来加了别的偏好被这次保存覆盖掉。
+let prefsCache: Record<string, unknown> = {}
+let saveTimer: number | null = null
+const orderSaving = ref(false)
+const orderSavedHint = ref('')
+
+function scheduleSaveNcOrder() {
+  if (saveTimer) window.clearTimeout(saveTimer)
+  orderSaving.value = true
+  saveTimer = window.setTimeout(async () => {
+    saveTimer = null
+    try {
+      prefsCache = { ...prefsCache, nc: ncOrder.value }
+      await saveUiPrefs(prefsCache)
+      orderSavedHint.value = '排序已保存'
+      window.setTimeout(() => { if (orderSavedHint.value === '排序已保存') orderSavedHint.value = '' }, 2000)
+    } catch (error) {
+      console.error(error)
+      orderSavedHint.value = '排序保存失败，刷新后可能还原'
+    } finally {
+      orderSaving.value = false
+    }
+  }, 600)
+}
+
+async function loadNcOrder() {
+  try {
+    prefsCache = await fetchUiPrefs()
+    ncOrder.value = normalizeNcOrder(prefsCache.nc)
+  } catch (error) {
+    // 读不到就用默认顺序，不打扰用户
+    console.error(error)
+  }
+}
+
+/** 钉钉的 kind 列表按用户顺序排（合并进 computed，模板直接 v-for）。 */
+const sortedDingtalkKinds = computed(() => {
+  const list = [...dingtalkKinds.value]
+  const order = groupOrder('dingtalk')
+  // 顺序里没有的（新增类型）排在最后
+  return list.sort((a, b) => {
+    const ia = order.indexOf(a.key)
+    const ib = order.indexOf(b.key)
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib)
+  })
+})
 
 // 待办数据来自后端 /api/messages（钉钉 / Salesforce / OA 聚合）。
 // 三家都未配置时后端返回示例数据，此处用 usingPlaceholder 标注出来。
@@ -947,6 +1142,7 @@ onMounted(() => {
     // 忽略损坏的本地数据
   }
   startAutoRefresh()
+  void loadNcOrder()
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
@@ -976,7 +1172,13 @@ onUnmounted(() => {
         <div class="todo-heading-main">
           <p class="section-kicker">NOTIFICATIONS CENTER</p>
           <h3 id="notifications-center-title">Notifications Center</h3>
-          <p class="todo-subtitle">钉钉的待办与日程集中在这里处理；Salesforce 与 OA 各自在下方区域。</p>
+          <p class="todo-subtitle">
+            钉钉的待办与日程集中在这里处理；Salesforce 与 OA 各自在下方区域。
+            <span class="nc-sort-hint">
+              拖动各区块标题可调整顺序，排序会跟着你的账号保存。
+              <template v-if="orderSavedHint">{{ orderSavedHint }}</template>
+            </span>
+          </p>
           <div class="todo-config-actions">
             <button
               v-for="action in configActions"
@@ -1049,8 +1251,19 @@ onUnmounted(() => {
         <section
           v-if="dingtalkSection"
           class="nc-source nc-source-dingtalk"
+          :class="{ 'is-dragging': isDragging('sources', 'dingtalk'), 'is-drop-target': isDropTarget('sources', 'dingtalk') }"
+          :style="orderStyle('sources', 'dingtalk')"
+          @dragover="onDragOver('sources', 'dingtalk', $event)"
+          @drop="onDrop('sources', 'dingtalk', $event)"
         >
-          <header class="nc-source-head">
+          <header
+            class="nc-source-head is-sortable"
+            draggable="true"
+            title="按住拖动可调整来源顺序"
+            @dragstart="onDragStart('sources', 'dingtalk', $event)"
+            @dragend="onDragEnd"
+          >
+            <span class="nc-drag-handle" aria-hidden="true"></span>
             <span class="nc-source-dot nc-dot-blue"></span>
             <h4 class="nc-source-name">{{ dingtalkSection.title }}</h4>
             <span class="nc-source-count">{{ dingtalkSection.pendingCount }}</span>
@@ -1059,19 +1272,42 @@ onUnmounted(() => {
               :class="{ 'is-live': dingtalkSection.enabled, 'is-warn': dingtalkSection.enabled && !!dingtalkSection.reason }"
               :title="dingtalkSection.reason || (dingtalkSection.enabled ? '已连接' : '未配置凭据')"
             >{{ dingtalkSection.enabled ? '已连接' : '未配置' }}</span>
+            <span class="nc-sort-nudge">
+              <button type="button" :disabled="orderOf('sources', 'dingtalk') === 0"
+                title="上移一个来源" @click.stop="nudge('sources', 'dingtalk', -1)">↑</button>
+              <button type="button" :disabled="orderOf('sources', 'dingtalk') === ncOrder.sources.length - 1"
+                title="下移一个来源" @click.stop="nudge('sources', 'dingtalk', 1)">↓</button>
+            </span>
           </header>
           <p v-if="dingtalkSection.reason" class="nc-source-reason">{{ dingtalkSection.reason }}</p>
 
           <div class="nc-kinds">
             <section
-              v-for="kind in dingtalkKinds"
+              v-for="kind in sortedDingtalkKinds"
               :key="kind.key"
               class="nc-kind"
+              :class="{ 'is-dragging': isDragging('dingtalk', kind.key), 'is-drop-target': isDropTarget('dingtalk', kind.key) }"
+              :style="orderStyle('dingtalk', kind.key)"
+              @dragover="onDragOver('dingtalk', kind.key, $event)"
+              @drop="onDrop('dingtalk', kind.key, $event)"
             >
-              <header class="nc-kind-head">
+              <header
+                class="nc-kind-head is-sortable"
+                draggable="true"
+                title="按住拖动可调整卡片顺序"
+                @dragstart="onDragStart('dingtalk', kind.key, $event)"
+                @dragend="onDragEnd"
+              >
+                <span class="nc-drag-handle" aria-hidden="true"></span>
                 <span class="nc-kind-dot"></span>
                 <h5>{{ kind.label }}</h5>
                 <span class="nc-kind-count">{{ kind.pendingCount }}</span>
+                <span class="nc-sort-nudge">
+                  <button type="button" :disabled="orderOf('dingtalk', kind.key) === 0"
+                    title="上移" @click.stop="nudge('dingtalk', kind.key, -1)">↑</button>
+                  <button type="button" :disabled="orderOf('dingtalk', kind.key) >= sortedDingtalkKinds.length - 1"
+                    title="下移" @click.stop="nudge('dingtalk', kind.key, 1)">↓</button>
+                </span>
                 <span class="nc-kind-hint">{{ kind.hint }}</span>
               </header>
               <p v-if="kind.note" class="nc-kind-note">{{ kind.note }}</p>
@@ -1168,10 +1404,30 @@ onUnmounted(() => {
         </section>
 
         <!-- Salesforce：与钉钉、OA 同级的第二个来源分区 -->
-        <section class="nc-source nc-source-salesforce" aria-labelledby="sf-wb-title">
-        <header class="nc-source-head">
+        <section
+          class="nc-source nc-source-salesforce"
+          aria-labelledby="sf-wb-title"
+          :class="{ 'is-dragging': isDragging('sources', 'salesforce'), 'is-drop-target': isDropTarget('sources', 'salesforce') }"
+          :style="orderStyle('sources', 'salesforce')"
+          @dragover="onDragOver('sources', 'salesforce', $event)"
+          @drop="onDrop('sources', 'salesforce', $event)"
+        >
+        <header
+          class="nc-source-head is-sortable"
+          draggable="true"
+          title="按住拖动可调整来源顺序"
+          @dragstart="onDragStart('sources', 'salesforce', $event)"
+          @dragend="onDragEnd"
+        >
+          <span class="nc-drag-handle" aria-hidden="true"></span>
           <span class="nc-source-dot nc-dot-orange"></span>
           <h4 class="nc-source-name" id="sf-wb-title">Salesforce</h4>
+          <span class="nc-sort-nudge">
+            <button type="button" :disabled="orderOf('sources', 'salesforce') === 0"
+              title="上移一个来源" @click.stop="nudge('sources', 'salesforce', -1)">↑</button>
+            <button type="button" :disabled="orderOf('sources', 'salesforce') === ncOrder.sources.length - 1"
+              title="下移一个来源" @click.stop="nudge('sources', 'salesforce', 1)">↓</button>
+          </span>
         </header>
         <p class="nc-source-sub">
           审批、今日任务与周计划集中处理，数据来自{{ salesforceConnected ? '已连接的 Salesforce' : ' Salesforce（未连接时点击卡片内"去连接"）' }}。
@@ -1249,11 +1505,30 @@ onUnmounted(() => {
 
         <div class="sf-wb-grid">
           <!-- 要批准的项目 -->
-          <article class="sf-card" :class="{ live: sfSections.approvals.connected }">
-            <header class="sf-card-head">
+          <article
+            class="sf-card"
+            :class="{ live: sfSections.approvals.connected, 'is-dragging': isDragging('salesforce', 'approvals'), 'is-drop-target': isDropTarget('salesforce', 'approvals') }"
+            :style="orderStyle('salesforce', 'approvals')"
+            @dragover="onDragOver('salesforce', 'approvals', $event)"
+            @drop="onDrop('salesforce', 'approvals', $event)"
+          >
+            <header
+              class="sf-card-head is-sortable"
+              draggable="true"
+              title="按住拖动可调整卡片顺序"
+              @dragstart="onDragStart('salesforce', 'approvals', $event)"
+              @dragend="onDragEnd"
+            >
+              <span class="nc-drag-handle" aria-hidden="true"></span>
               <span class="sf-card-dot"></span>
               <h4>要批准的项目</h4>
               <span class="sf-card-count">{{ sfSections.approvals.items.length }}</span>
+                          <span class="nc-sort-nudge">
+                <button type="button" :disabled="orderOf('salesforce', 'approvals') === 0"
+                  title="上移" @click.stop="nudge('salesforce', 'approvals', -1)">↑</button>
+                <button type="button" :disabled="orderOf('salesforce', 'approvals') >= ncOrder.kinds.salesforce.length - 1"
+                  title="下移" @click.stop="nudge('salesforce', 'approvals', 1)">↓</button>
+              </span>
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.approvals.loading" class="sf-card-loading">加载中…</div>
@@ -1300,11 +1575,30 @@ onUnmounted(() => {
           </article>
 
           <!-- 今天的任务（口径与 Salesforce 原生首页「今天的任务」一致：我名下的任务） -->
-          <article class="sf-card" :class="{ live: sfSections.tasks.connected }">
-            <header class="sf-card-head">
+          <article
+            class="sf-card"
+            :class="{ live: sfSections.tasks.connected, 'is-dragging': isDragging('salesforce', 'tasks'), 'is-drop-target': isDropTarget('salesforce', 'tasks') }"
+            :style="orderStyle('salesforce', 'tasks')"
+            @dragover="onDragOver('salesforce', 'tasks', $event)"
+            @drop="onDrop('salesforce', 'tasks', $event)"
+          >
+            <header
+              class="sf-card-head is-sortable"
+              draggable="true"
+              title="按住拖动可调整卡片顺序"
+              @dragstart="onDragStart('salesforce', 'tasks', $event)"
+              @dragend="onDragEnd"
+            >
+              <span class="nc-drag-handle" aria-hidden="true"></span>
               <span class="sf-card-dot"></span>
               <h4>今天的任务</h4>
               <span class="sf-card-count">{{ sfSections.tasks.items.length }}</span>
+                          <span class="nc-sort-nudge">
+                <button type="button" :disabled="orderOf('salesforce', 'tasks') === 0"
+                  title="上移" @click.stop="nudge('salesforce', 'tasks', -1)">↑</button>
+                <button type="button" :disabled="orderOf('salesforce', 'tasks') >= ncOrder.kinds.salesforce.length - 1"
+                  title="下移" @click.stop="nudge('salesforce', 'tasks', 1)">↓</button>
+              </span>
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.tasks.loading" class="sf-card-loading">加载中…</div>
@@ -1341,11 +1635,30 @@ onUnmounted(() => {
           </article>
 
           <!-- 今日日程（对应 Salesforce 原生首页「今日事件」面板） -->
-          <article class="sf-card" :class="{ live: sfSections.events.connected }">
-            <header class="sf-card-head">
+          <article
+            class="sf-card"
+            :class="{ live: sfSections.events.connected, 'is-dragging': isDragging('salesforce', 'events'), 'is-drop-target': isDropTarget('salesforce', 'events') }"
+            :style="orderStyle('salesforce', 'events')"
+            @dragover="onDragOver('salesforce', 'events', $event)"
+            @drop="onDrop('salesforce', 'events', $event)"
+          >
+            <header
+              class="sf-card-head is-sortable"
+              draggable="true"
+              title="按住拖动可调整卡片顺序"
+              @dragstart="onDragStart('salesforce', 'events', $event)"
+              @dragend="onDragEnd"
+            >
+              <span class="nc-drag-handle" aria-hidden="true"></span>
               <span class="sf-card-dot"></span>
               <h4>今日日程</h4>
               <span class="sf-card-count">{{ sfSections.events.items.length }}</span>
+                          <span class="nc-sort-nudge">
+                <button type="button" :disabled="orderOf('salesforce', 'events') === 0"
+                  title="上移" @click.stop="nudge('salesforce', 'events', -1)">↑</button>
+                <button type="button" :disabled="orderOf('salesforce', 'events') >= ncOrder.kinds.salesforce.length - 1"
+                  title="下移" @click.stop="nudge('salesforce', 'events', 1)">↓</button>
+              </span>
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.events.loading" class="sf-card-loading">加载中…</div>
@@ -1381,11 +1694,30 @@ onUnmounted(() => {
           </article>
 
           <!-- 销售周计划 -->
-          <article class="sf-card" :class="{ live: sfSections.plans.connected }">
-            <header class="sf-card-head">
+          <article
+            class="sf-card"
+            :class="{ live: sfSections.plans.connected, 'is-dragging': isDragging('salesforce', 'plans'), 'is-drop-target': isDropTarget('salesforce', 'plans') }"
+            :style="orderStyle('salesforce', 'plans')"
+            @dragover="onDragOver('salesforce', 'plans', $event)"
+            @drop="onDrop('salesforce', 'plans', $event)"
+          >
+            <header
+              class="sf-card-head is-sortable"
+              draggable="true"
+              title="按住拖动可调整卡片顺序"
+              @dragstart="onDragStart('salesforce', 'plans', $event)"
+              @dragend="onDragEnd"
+            >
+              <span class="nc-drag-handle" aria-hidden="true"></span>
               <span class="sf-card-dot"></span>
               <h4>销售周计划</h4>
               <span class="sf-card-count">{{ sfSections.plans.items.length }}</span>
+                          <span class="nc-sort-nudge">
+                <button type="button" :disabled="orderOf('salesforce', 'plans') === 0"
+                  title="上移" @click.stop="nudge('salesforce', 'plans', -1)">↑</button>
+                <button type="button" :disabled="orderOf('salesforce', 'plans') >= ncOrder.kinds.salesforce.length - 1"
+                  title="下移" @click.stop="nudge('salesforce', 'plans', 1)">↓</button>
+              </span>
             </header>
             <div class="sf-card-body">
               <div v-if="sfSections.plans.loading" class="sf-card-loading">加载中…</div>
@@ -1423,10 +1755,30 @@ onUnmounted(() => {
       </section>
 
       <!-- OA：与「Salesforce」同样的形式 -->
-      <section class="nc-source nc-source-oa" aria-labelledby="oa-wb-title">
-        <header class="nc-source-head">
+      <section
+        class="nc-source nc-source-oa"
+        aria-labelledby="oa-wb-title"
+        :class="{ 'is-dragging': isDragging('sources', 'oa'), 'is-drop-target': isDropTarget('sources', 'oa') }"
+        :style="orderStyle('sources', 'oa')"
+        @dragover="onDragOver('sources', 'oa', $event)"
+        @drop="onDrop('sources', 'oa', $event)"
+      >
+        <header
+          class="nc-source-head is-sortable"
+          draggable="true"
+          title="按住拖动可调整来源顺序"
+          @dragstart="onDragStart('sources', 'oa', $event)"
+          @dragend="onDragEnd"
+        >
+          <span class="nc-drag-handle" aria-hidden="true"></span>
           <span class="nc-source-dot nc-dot-green"></span>
           <h4 class="nc-source-name" id="oa-wb-title">OA</h4>
+          <span class="nc-sort-nudge">
+            <button type="button" :disabled="orderOf('sources', 'oa') === 0"
+              title="上移一个来源" @click.stop="nudge('sources', 'oa', -1)">↑</button>
+            <button type="button" :disabled="orderOf('sources', 'oa') === ncOrder.sources.length - 1"
+              title="下移一个来源" @click.stop="nudge('sources', 'oa', 1)">↓</button>
+          </span>
         </header>
         <p class="nc-source-sub">
           公司 OA 的待办集中在这里处理，数据来自{{ oaConnected ? '已连接的 OA' : ' OA（未配置时点击下方"去配置"）' }}。
@@ -1515,12 +1867,31 @@ onUnmounted(() => {
 
         <div class="sf-wb-grid">
           <!-- OA 待办：未查看的标题标红 -->
-          <article class="sf-card" :class="{ live: oaConnected }">
-            <header class="sf-card-head">
+          <article
+            class="sf-card"
+            :class="{ live: oaConnected, 'is-dragging': isDragging('oa', 'todos'), 'is-drop-target': isDropTarget('oa', 'todos') }"
+            :style="orderStyle('oa', 'todos')"
+            @dragover="onDragOver('oa', 'todos', $event)"
+            @drop="onDrop('oa', 'todos', $event)"
+          >
+            <header
+              class="sf-card-head is-sortable"
+              draggable="true"
+              title="按住拖动可调整卡片顺序"
+              @dragstart="onDragStart('oa', 'todos', $event)"
+              @dragend="onDragEnd"
+            >
+              <span class="nc-drag-handle" aria-hidden="true"></span>
               <span class="sf-card-dot"></span>
               <h4>我的待办</h4>
               <span v-if="oaUnreadCount" class="sf-card-unread">{{ oaUnreadCount }} 未读</span>
               <span class="sf-card-count">{{ oaTodos.length }}</span>
+                          <span class="nc-sort-nudge">
+                <button type="button" :disabled="orderOf('oa', 'todos') === 0"
+                  title="上移" @click.stop="nudge('oa', 'todos', -1)">↑</button>
+                <button type="button" :disabled="orderOf('oa', 'todos') >= ncOrder.kinds.oa.length - 1"
+                  title="下移" @click.stop="nudge('oa', 'todos', 1)">↓</button>
+              </span>
             </header>
             <div class="sf-card-body">
               <div v-if="oaLoading" class="sf-card-loading">加载中…</div>
@@ -1554,12 +1925,31 @@ onUnmounted(() => {
           </article>
 
           <!-- OA 公文：走协同工作（cowork），未查看的标题标红 -->
-          <article class="sf-card" :class="{ live: oaConnected }">
-            <header class="sf-card-head">
+          <article
+            class="sf-card"
+            :class="{ live: oaConnected, 'is-dragging': isDragging('oa', 'cowork'), 'is-drop-target': isDropTarget('oa', 'cowork') }"
+            :style="orderStyle('oa', 'cowork')"
+            @dragover="onDragOver('oa', 'cowork', $event)"
+            @drop="onDrop('oa', 'cowork', $event)"
+          >
+            <header
+              class="sf-card-head is-sortable"
+              draggable="true"
+              title="按住拖动可调整卡片顺序"
+              @dragstart="onDragStart('oa', 'cowork', $event)"
+              @dragend="onDragEnd"
+            >
+              <span class="nc-drag-handle" aria-hidden="true"></span>
               <span class="sf-card-dot"></span>
               <h4>公文</h4>
               <span v-if="oaCoworkUnreadCount" class="sf-card-unread">{{ oaCoworkUnreadCount }} 未读</span>
               <span class="sf-card-count">{{ oaCowork.length }}</span>
+                          <span class="nc-sort-nudge">
+                <button type="button" :disabled="orderOf('oa', 'cowork') === 0"
+                  title="上移" @click.stop="nudge('oa', 'cowork', -1)">↑</button>
+                <button type="button" :disabled="orderOf('oa', 'cowork') >= ncOrder.kinds.oa.length - 1"
+                  title="下移" @click.stop="nudge('oa', 'cowork', 1)">↓</button>
+              </span>
             </header>
             <div class="sf-card-body">
               <div v-if="oaCoworkLoading" class="sf-card-loading">加载中…</div>

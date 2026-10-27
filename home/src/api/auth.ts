@@ -123,6 +123,27 @@ export async function listUsers(): Promise<AuthUser[]> {
   return data.users || []
 }
 
+/** 读当前账号的界面偏好（目前是首页 Notifications Center 的区块排序）。 */
+export async function fetchUiPrefs(): Promise<Record<string, unknown>> {
+  const { data } = await api.get<{ ok: boolean; prefs: Record<string, unknown> }>(
+    '/auth/prefs',
+    { timeout: 15000 },
+  )
+  return data.prefs || {}
+}
+
+/** 整体覆盖保存界面偏好（前端永远提交完整的一份）。 */
+export async function saveUiPrefs(
+  prefs: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const { data } = await api.patch<{ ok: boolean; prefs: Record<string, unknown> }>(
+    '/auth/prefs',
+    prefs,
+    { timeout: 15000 },
+  )
+  return data.prefs || {}
+}
+
 export async function createUser(payload: {
   username: string
   password: string

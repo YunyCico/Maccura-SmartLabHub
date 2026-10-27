@@ -717,3 +717,49 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
   outline: 2px solid rgba(27, 95, 170, .55);
   outline-offset: 2px;
 }
+
+/* ---------- Notifications Center 区块排序（拖拽 + 上下移） ---------- */
+/* 三个来源要能用 CSS order 排序，所以外层必须是 flex/grid；
+   原来 .nc-sources 是普通块容器，order 对它无效。 */
+.nc-sources { display: flex; flex-direction: column; }
+
+/* 可拖动区域的标题栏：鼠标变成抓手，手柄平时淡出，悬停才显现 */
+.is-sortable { cursor: grab; }
+.is-sortable:active { cursor: grabbing; }
+.is-sortable .nc-drag-handle { opacity: 0; transition: opacity .15s; }
+.is-sortable:hover .nc-drag-handle { opacity: 1; }
+
+/* 六点手柄：用径向渐变平铺画出 2×3 个圆点，省得每个卡片都内联一段 SVG */
+.nc-drag-handle {
+  width: 10px; height: 15px; flex: none;
+  color: #a8a8b0;
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1.4px);
+  background-size: 5px 5px;
+  background-repeat: repeat;
+}
+
+/* 排序按钮：很小、很淡，只在悬停标题栏时明显，平时不抢视线 */
+.nc-sort-nudge { display: inline-flex; gap: 2px; margin-left: 4px; opacity: 0; transition: opacity .15s; }
+.is-sortable:hover .nc-sort-nudge,
+.is-sortable:focus-within .nc-sort-nudge { opacity: 1; }
+.nc-sort-nudge button {
+  width: 18px; height: 18px; padding: 0;
+  border: 1px solid rgba(0, 0, 0, .12);
+  border-radius: 5px; background: #fff; color: #5b5b63;
+  font-size: 11px; line-height: 1; cursor: pointer;
+}
+.nc-sort-nudge button:hover:not(:disabled) { background: #eef4fb; border-color: rgba(27, 95, 170, .4); color: #1b5faa; }
+.nc-sort-nudge button:disabled { opacity: .35; cursor: default; }
+
+/* 拖拽中：原位置半透明；落点高亮一条边，明确"会插到这里" */
+.nc-source.is-dragging, .nc-kind.is-dragging, .sf-card.is-dragging { opacity: .45; }
+.nc-source.is-drop-target, .nc-kind.is-drop-target, .sf-card.is-drop-target {
+  outline: 2px dashed rgba(27, 95, 170, .65);
+  outline-offset: 3px;
+}
+
+/* 排序状态提示（已保存 / 保存失败） */
+.nc-sort-hint {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 8px; color: var(--muted); font-size: 11px;
+}

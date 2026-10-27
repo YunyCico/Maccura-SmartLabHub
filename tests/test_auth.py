@@ -481,3 +481,115 @@ def test_login_failure_counter_clears_on_success(client) -> None:
         "/api/auth/login", json={"username": "admin", "password": "Passw0rd!x"}
     ).status_code == 200
     auth_service.reset_login_failures()
+
+
+# ---------------- 界面偏好（Notifications Center 区块排序）----------------
+
+def test_prefs_require_login(client) -> None:
+    """未登录不能读写偏好 —— 中间件白名单放了 /api/auth/，这里要自己兜住。"""
+    _setup_admin(client)
+    anonymous = type(client)(client.app)
+    assert anonymous.get("/api/auth/prefs").status_code == 401
+    assert anonymous.patch("/api/auth/prefs", json={"nc": {}}).status_code == 401
+
+
+def test_prefs_default_is_empty_object(client) -> None:
+    """从没设置过时返回空对象，前端据此用默认顺序。"""
+    _setup_admin(client)
+    response = client.get("/api/auth/prefs")
+    assert response.status_code == 200
+    assert response.json()["prefs"] == {}
+
+
+def test_prefs_roundtrip(client) -> None:
+    """存进去什么就能原样读回来（后端不解释内容）。"""
+    _setup_admin(client)
+    payload = {
+        "nc": {
+            "sources": ["oa", "dingtalk", "salesforce"],
+            "kinds": {"dingtalk": ["trip", "todo", "calendar"]},
+        }
+    }
+    assert client.patch("/api/auth/prefs", json=payload).status_code == 200
+    assert client.get("/api/auth/prefs").json()["prefs"] == payload
+
+
+def test_prefs_save_is_full_overwrite(client) -> None:
+    """整体覆盖：删掉一个键后再读就真的没了（不做深合并）。"""
+    _setup_admin(client)
+    client.patch("/api/auth/prefs", json={"nc": {"sources": ["oa"]}, "other": 1})
+    client.patch("/api/auth/prefs", json={"nc": {"sources": ["salesforce"]}})
+    prefs = client.get("/api/auth/prefs").json()["prefs"]
+    assert prefs == {"nc": {"sources": ["salesforce"]}}
+    assert "other" not in prefs
+
+
+def test_prefs_rejects_oversized_payload(client) -> None:
+    """偏好只是展示设置，不该被拿来当存储用。"""
+    _setup_admin(client)
+    response = client.patch("/api/auth/prefs", json={"junk": "x" * 9000})
+    assert response.status_code == 400
+
+
+def test_prefs_are_per_user(client, tmp_path: Path) -> None:
+    """A 的排序不影响 B —— 这是"跟账号走"的核心。"""
+    from app.services import auth_service
+
+    _setup_admin(client)
+    admin_cookies = dict(client.cookies)
+    client.patch("/api/auth/prefs", json={"nc": {"sources": ["oa"]}})
+
+    auth_service.create_user("member1", "Passw0rd!x", "成员一")
+    client.cookies.clear()
+    assert client.post(
+        "/api/auth/login", json={"username": "member1", "password": "Passw0rd!x"}
+    ).status_code == 200
+    # 成员一没设过，应该是空
+    assert client.get("/api/auth/prefs").json()["prefs"] == {}
+    client.patch("/api/auth/prefs", json={"nc": {"sources": ["salesforce"]}})
+
+    # 换回管理员，自己那份没被改
+    client.cookies.clear()
+    client.cookies.update(admin_cookies)
+    assert client.get("/api/auth/prefs").json()["prefs"] == {"nc": {"sources": ["oa"]}}
+
+
+def test_ui_prefs_column_added_to_legacy_db(tmp_path: Path, monkeypatch) -> None:
+    """老库（没有 ui_prefs 列）打开后要自动补列，不能报错。"""
+    import sqlite3 as _sqlite
+
+    from app.core import database
+
+    legacy = tmp_path / "legacy.db"
+    conn = _sqlite.connect(legacy)
+    conn.execute(
+        """
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            display_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'member',
+            active INTEGER NOT NULL DEFAULT 1,
+            avatar TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            last_login_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO users (username, display_name, password_hash, role, active, created_at) "
+        "VALUES ('old', '老账号', 'scrypt$x', 'admin', 1, '2026-01-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    # 把模块级路径指到这份老库，connection() 一打开就会跑 ensure_schema 补列
+    monkeypatch.setattr(database, "DATABASE_PATH", legacy)
+    with database.connection() as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+        assert "ui_prefs" in columns
+        # 老数据还在，且新列默认空串（等价于"没设置过"）
+        row = db.execute("SELECT username, ui_prefs FROM users").fetchone()
+        assert row["username"] == "old"
+        assert row["ui_prefs"] == ""

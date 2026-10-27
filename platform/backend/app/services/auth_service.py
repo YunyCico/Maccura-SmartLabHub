@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import sqlite3
@@ -357,6 +358,48 @@ def delete_user(user_id: int) -> None:
                 raise AuthError("这是最后一个管理员，不能删除")
         db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+# ---------------- 界面偏好 ----------------
+
+# 偏好内容是纯前端的展示设置（目前只有 Notifications Center 的区块顺序）。
+# 后端不解释内容，只负责：存下来、跟着账号走、别让它无限长大。
+MAX_UI_PREFS_BYTES = 8 * 1024
+
+
+def get_ui_prefs(user_id: int) -> dict[str, Any]:
+    """读该账号的界面偏好。没有存过就返回空字典。"""
+    with connection() as db:
+        row = db.execute("SELECT ui_prefs FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        raise AuthError("账号不存在")
+    raw = (row["ui_prefs"] or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # 库里是坏数据（手改过/版本回退）时当作没设置，别让首页崩掉
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_ui_prefs(user_id: int, prefs: dict[str, Any]) -> dict[str, Any]:
+    """整体覆盖保存界面偏好。
+
+    故意用整体覆盖而不是深合并：前端永远提交完整的一份，
+    合并规则留在这里只会让"删掉某个键"变得做不到。
+    """
+    if not isinstance(prefs, dict):
+        raise AuthError("偏好格式不对，应该是一个对象")
+    payload = json.dumps(prefs, ensure_ascii=False, separators=(",", ":"))
+    if len(payload.encode("utf-8")) > MAX_UI_PREFS_BYTES:
+        raise AuthError("偏好数据太大了")
+    with connection() as db:
+        cursor = db.execute("UPDATE users SET ui_prefs = ? WHERE id = ?", (payload, user_id))
+        if cursor.rowcount == 0:
+            raise AuthError("账号不存在")
+    return prefs
 
 
 # ---------------- 会话 ----------------

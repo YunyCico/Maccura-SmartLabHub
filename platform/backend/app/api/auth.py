@@ -187,6 +187,35 @@ def auth_change_password(payload: PasswordPayload, request: Request) -> dict:
     return {"ok": True, "detail": "密码已修改，请用新密码重新登录"}
 
 
+# ---------------- 界面偏好（跟着账号走）----------------
+
+@router.get("/prefs")
+def auth_get_prefs(request: Request) -> dict:
+    """读当前账号的界面偏好。
+
+    目前用于首页 Notifications Center 的区块排序：
+        { "nc": { "sources": [...], "kinds": { "dingtalk": [...], ... } } }
+    后端不解释内容，原样返回；没设置过就是空对象。
+    """
+    user = current_user(request)
+    try:
+        prefs = auth_service.get_ui_prefs(int(user["id"]))
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "prefs": prefs}
+
+
+@router.patch("/prefs")
+def auth_save_prefs(payload: dict, request: Request) -> dict:
+    """整体覆盖保存界面偏好 —— 前端每次提交完整的一份。"""
+    user = current_user(request)
+    try:
+        prefs = auth_service.save_ui_prefs(int(user["id"]), payload)
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "prefs": prefs}
+
+
 # ---------------- 管理员：账号管理 ----------------
 
 @router.get("/users")

@@ -70,16 +70,22 @@ def ensure_schema(database: sqlite3.Connection) -> None:
             role TEXT NOT NULL DEFAULT 'member',
             active INTEGER NOT NULL DEFAULT 1,
             avatar TEXT NOT NULL DEFAULT '',
+            ui_prefs TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             last_login_at TEXT
         )
         """
     )
     # 老库补字段：CREATE TABLE IF NOT EXISTS 不会给已存在的表加列，
-    # 所以头像这列要单独 ALTER 一次（幂等）。
+    # 所以后来新增的列都要单独 ALTER 一次（幂等）。
     _columns = {row[1] for row in database.execute("PRAGMA table_info(users)")}
     if "avatar" not in _columns:
         database.execute("ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''")
+    # ui_prefs：界面偏好（当前用于首页 Notifications Center 的区块排序）。
+    # 存 JSON 文本、跟着账号走 —— 换电脑/换浏览器打开还是自己排的那套顺序。
+    # 故意不建成结构化表：这是纯前端的展示偏好，后端不需要理解里面是什么。
+    if "ui_prefs" not in _columns:
+        database.execute("ALTER TABLE users ADD COLUMN ui_prefs TEXT NOT NULL DEFAULT ''")
     # 登录会话：只存令牌的 SHA-256 摘要，库被看到也拿不到可用的 cookie。
     database.execute(
         """
