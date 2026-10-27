@@ -118,6 +118,25 @@ export interface SalesforceLoginResult {
   sources?: IntegrationReadResponse['sources']
 }
 
+/** 登录 OA 并保存账号（OA 只要账号密码，不需要动态令牌）。 */
+export async function loginOa(payload: {
+  base_url?: string
+  username?: string
+  password?: string
+  login_path?: string
+  todo_path?: string
+  parser?: string
+  xml_path?: string
+  page_id?: string
+}): Promise<SalesforceLoginResult> {
+  const response = await api.post<SalesforceLoginResult>(
+    '/integrations/oa/login',
+    payload,
+    { timeout: 60000 },
+  )
+  return response.data
+}
+
 /** 登录 Salesforce 并把会话 id 存回配置。 */
 export async function loginSalesforce(payload: {
   instance_url?: string

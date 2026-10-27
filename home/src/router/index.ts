@@ -70,6 +70,12 @@ const router = createRouter({
       },
     },
     {
+      path: '/service-demand',
+      name: 'service-demand',
+      component: () => import('../views/ServiceDemandView.vue'),
+      meta: { title: '服务需求报表', code: '05' },
+    },
+    {
       path: '/account',
       name: 'account',
       component: () => import('../views/AccountView.vue'),

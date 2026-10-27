@@ -106,6 +106,10 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "rows_path": "",
         "field_map": "",
         "default_title": "OA 待办",
+        # parser：json = 通用 JSON 接口（默认）；weaver_xml = 泛微 e-cology 表格 XML
+        "parser": "json",
+        "xml_path": "",
+        "page_id": "",
         "timeout_seconds": 10,
         "max_items": 30,
     },
@@ -268,6 +272,10 @@ def effective_settings() -> dict[str, Any]:
             "rows_path": oa.get("rows_path") or settings.oa_rows_path,
             "field_map": oa.get("field_map") or settings.oa_field_map,
             "default_title": oa.get("default_title") or settings.oa_default_title,
+            # 泛微表格 XML 专用：parser=weaver_xml 时才用得上
+            "parser": oa.get("parser") or "json",
+            "xml_path": oa.get("xml_path") or "",
+            "page_id": oa.get("page_id") or "",
             "timeout_seconds": oa.get("timeout_seconds") or settings.oa_timeout_seconds,
             "max_items": oa.get("max_items") or settings.oa_max_items,
         },

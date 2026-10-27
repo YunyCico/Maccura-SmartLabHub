@@ -44,6 +44,95 @@ class SalesforceLoginPayload(BaseModel):
     remember: bool = False
 
 
+class OaLoginPayload(BaseModel):
+    """OA 登录请求。OA 只要账号密码，**不需要动态令牌**。"""
+
+    base_url: str = ""
+    username: str = ""
+    password: str = ""
+    login_path: str = ""
+    todo_path: str = ""
+    parser: str = ""
+    xml_path: str = ""
+    page_id: str = ""
+    remember: bool = True
+
+
+@router.post("/oa/login")
+def oa_login(payload: OaLoginPayload) -> dict:
+    """登录 OA 并保存账号，之后后端每次拉数据自动登录。
+
+    和 Salesforce 的区别：OA 没有双因素，只要账号密码。
+    这里**不存会话 cookie**，而是存账号密码 + auth_mode=password，
+    由适配器每次取数时自动登录 —— cookie 会过期，账号密码不会。
+    """
+    from app.services.oa_messages import OaAdapter
+
+    stored = integration_config.load_config()["oa"]
+    merged = dict(stored)
+    for key, value in payload.model_dump().items():
+        if value:
+            merged[key] = value
+    # 前端回传的是脱敏空串，空值沿用已保存的凭据
+    if not payload.password and stored.get("password"):
+        merged["password"] = stored["password"]
+
+    if not merged.get("base_url"):
+        return {"ok": False, "detail": "还没填 OA 系统地址"}
+    if not merged.get("username") or not merged.get("password"):
+        return {"ok": False, "detail": "还缺：登录账号 / 密码"}
+
+    adapter = OaAdapter()
+    adapter._settings = {**merged, "auth_mode": "password"}
+    cookie, error = adapter.login_and_get_cookie()
+    if error:
+        return {"ok": False, "detail": error}
+
+    # 登录成功 → 落盘账号密码，切成 password 模式（下次自动登录）
+    updates = {
+        "oa": {
+            "base_url": merged.get("base_url", ""),
+            "auth_mode": "password",
+            "username": merged.get("username", ""),
+            "password": merged.get("password", ""),
+            "login_path": merged.get("login_path", ""),
+            "todo_path": merged.get("todo_path", ""),
+            "parser": merged.get("parser", ""),
+            "xml_path": merged.get("xml_path", ""),
+            "page_id": merged.get("page_id", ""),
+            # 会话也存一份：账号密码万一失效，短时间内还能用这个 cookie 顶着
+            "token": cookie,
+        }
+    }
+    try:
+        config = integration_config.save_config(updates)
+    except OSError as exc:
+        return {"ok": False, "detail": f"登录成功但保存失败：{exc}"}
+
+    # 顺便真拉一次，确认能出数据（登录成功不等于能取到待办）
+    count = 0
+    probe_error = ""
+    try:
+        verify = OaAdapter()
+        items = verify.fetch()
+        count = len(items)
+        probe_error = verify.error
+    except Exception as exc:  # 探活失败不影响登录结果
+        probe_error = str(exc)
+
+    detail = f"登录成功，已取到 {count} 条待办"
+    if not count and probe_error:
+        detail = f"登录成功，但取数失败：{probe_error}"
+    return {
+        "ok": True,
+        "detail": detail,
+        "cookie_hint": integration_config.secret_hint(cookie),
+        "count": count,
+        "config": integration_config.public_view(config),
+        "sources": _source_flags(config),
+    }
+
+
 @router.post("/salesforce/login")
 def salesforce_login(payload: SalesforceLoginPayload) -> dict:
     """登录 Salesforce 并把会话 id 存进配置。

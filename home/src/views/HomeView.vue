@@ -6,7 +6,7 @@ import { fetchMessages, type MessageFeed, type MessageItem, type MessageSourceKe
 import { api } from '../api/http'
 import { isAdmin } from '../api/auth'
 import { resolveDingTalkAuthCode } from '../lib/dingtalk'
-import { loginSalesforce, disconnectSalesforce, fetchSfTodayTasks, fetchSfMyEvents, fetchSfApprovals, fetchSfWeeklyPlans, fetchOaTodos, disconnectOa, fetchDingtalkReminders, type SfSectionResponse, type OaTodoItem, type DingtalkReminder } from '../api/integrations'
+import { loginOa, loginSalesforce, disconnectSalesforce, fetchSfTodayTasks, fetchSfMyEvents, fetchSfApprovals, fetchSfWeeklyPlans, fetchOaTodos, disconnectOa, fetchDingtalkReminders, type SfSectionResponse, type OaTodoItem, type DingtalkReminder } from '../api/integrations'
 
 const router = useRouter()
 
@@ -59,6 +59,15 @@ const modules = [
     status: '规划中',
     action: '查看模块',
     tone: 'purple',
+  },
+  {
+    code: '05',
+    label: '服务需求报表',
+    to: '/service-demand',
+    description: '按条件从数据中台拉取服务需求明细，自动生成 KPI 看板、分析图表与可导出的 Excel / HTML 报表。',
+    status: '可用',
+    action: '进入报表',
+    tone: 'teal',
   },
 ]
 
@@ -334,6 +343,12 @@ const oaReason = computed(() => sourceState.value.oa?.reason ?? '')
 const oaTodos = ref<OaTodoItem[]>([])
 const oaLoading = ref(false)
 const oaDisconnecting = ref(false)
+// OA 登录表单：只要账号密码（OA 没有动态令牌，和 Salesforce 的区别就在这）
+const oaForm = reactive({ username: '', password: '' })
+const oaLogging = ref(false)
+const oaLoginMessage = ref('')
+const oaLoginError = ref('')
+const OA_REMEMBER_KEY = 'slh.oa.credentials'
 
 // ---------- 钉钉消息提醒（带消息人与头像） ----------
 // 钉钉没有收件箱查询接口，能拿到"提醒"的只有日程的 reminders 字段；
@@ -635,6 +650,39 @@ function planStatusClass(status: string): string {
   return 'is-neutral'
 }
 
+async function handleOaLogin() {
+  if (!oaForm.username.trim() || !oaForm.password) {
+    oaLoginError.value = '请填写 OA 账号和密码。'
+    return
+  }
+  oaLogging.value = true
+  oaLoginMessage.value = ''
+  oaLoginError.value = ''
+  try {
+    const result = await loginOa({
+      username: oaForm.username.trim(),
+      password: oaForm.password,
+    })
+    if (result.ok) {
+      oaLoginMessage.value = result.detail || '登录成功'
+      localStorage.setItem(
+        OA_REMEMBER_KEY,
+        JSON.stringify({ username: oaForm.username }),
+      )
+      oaForm.password = ''
+      await loadMessages()
+      await loadOaTodos()
+    } else {
+      oaLoginError.value = result.detail || '登录失败'
+    }
+  } catch (error) {
+    oaLoginError.value = '登录请求失败，请确认后端已启动。'
+    console.error(error)
+  } finally {
+    oaLogging.value = false
+  }
+}
+
 async function handleSalesforceLogin() {
     if (!sfForm.username.trim() || !sfForm.password || !sfForm.totp_secret.trim()) {
       sfLoginError.value = '请填写用户名、密码和腾讯身份验证器的 6 位动态码（令牌）。'
@@ -852,6 +900,16 @@ onMounted(() => {
     }
   } catch {
     // 本地数据损坏则忽略，不影响登录
+  }
+  // 回填上次的 OA 账号（密码不存，每次手输）
+  try {
+    const rawOa = localStorage.getItem(OA_REMEMBER_KEY)
+    if (rawOa) {
+      const saved = JSON.parse(rawOa) as { username?: string }
+      if (saved.username) oaForm.username = saved.username
+    }
+  } catch {
+    // 忽略损坏的本地数据
   }
   startAutoRefresh()
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -1363,19 +1421,52 @@ onUnmounted(() => {
             </template>
           </div>
 
-          <!-- 未配置时展开：引导去设置页填接口信息（OA 路径/字段映射项多，放设置页更合适） -->
+          <!-- 未连接时展开：账号密码登录（OA 只要账号密码，没有动态令牌）。
+               样式复用 Salesforce 那套 sf-* 类名，保持两个面板观感一致。 -->
           <div class="sf-panel-body" :class="{ collapsed: oaConnected && !oaReason }">
             <div class="sf-panel-body-inner">
               <div class="sf-quick-login">
-                <p class="sf-quick-title">配置公司 OA 接入</p>
+                <p class="sf-quick-title">登录公司 OA 抓取待办</p>
                 <p class="sf-quick-sub">
-                  OA 是泛微 e-cology，不同版本的待办接口路径与返回结构差异很大，系统不预设默认值。需在设置页填写<b>系统地址、待办接口路径、数据行路径与字段映射</b>；填好后此处自动收起并显示实时待办。
+                  填写 OA 账号和密码即可 —— <b>不需要动态令牌</b>。登录后账号会保存在本机，
+                  后端每次拉数据自动登录，不用反复输入。
                 </p>
-                <div class="sf-actions">
-                  <button class="sf-login-btn" type="button" @click="router.push('/settings/integrations')">去配置</button>
-                  <button class="sf-settings-btn" type="button" @click="router.push('/settings/integrations')">消息互通设置</button>
+                <div class="sf-form">
+                  <label class="sf-field">
+                    <span>OA 账号</span>
+                    <input
+                      v-model="oaForm.username"
+                      type="text"
+                      placeholder="OA 账号（通常是工号，如 10399）"
+                      autocomplete="username"
+                    />
+                  </label>
+                  <label class="sf-field">
+                    <span>密码</span>
+                    <input
+                      v-model="oaForm.password"
+                      type="password"
+                      placeholder="OA 登录密码"
+                      autocomplete="current-password"
+                    />
+                  </label>
                 </div>
-                <div v-if="oaReason" class="test-result fail"><span>✕</span>{{ oaReason }}</div>
+                <div class="sf-actions">
+                  <button
+                    class="sf-login-btn"
+                    type="button"
+                    :disabled="oaLogging"
+                    @click="handleOaLogin"
+                  >
+                    {{ oaLogging ? '登录中…' : '登录并抓取待办' }}
+                  </button>
+                  <button class="sf-settings-btn" type="button" @click="router.push('/settings/integrations')">
+                    高级设置
+                  </button>
+                </div>
+                <div v-if="oaLoginMessage" class="test-result ok"><span>✓</span>{{ oaLoginMessage }}</div>
+                <div v-if="oaLoginError" class="test-result fail"><span>✕</span>{{ oaLoginError }}</div>
+                <div v-else-if="oaReason" class="test-result fail"><span>✕</span>{{ oaReason }}</div>
               </div>
             </div>
           </div>

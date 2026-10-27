@@ -65,9 +65,16 @@ _PUBLIC_API_PREFIXES = (
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    # ⚠️ 除了 /api/，还要管 /engine/ —— 那是数据分析引擎的反向代理入口，
-    #    挂的是引擎自己的页面和接口（以前完全裸奔）。漏掉这里等于白加鉴权。
-    guarded = path.startswith("/api/") or path.startswith("/engine/")
+    # ⚠️ 除了 /api/，还要管 /engine/ 和 /portal/：
+    #    /engine/ 是数据分析引擎的反向代理入口，
+    #    /portal/ 是「服务需求报表」子应用，
+    #    它们都挂着**没有鉴权**的内部接口，漏掉等于白加鉴权。
+    guarded = (
+        path.startswith("/api/")
+        or path.startswith("/engine/")
+        or path == "/portal"
+        or path.startswith("/portal/")
+    )
     if request.method == "OPTIONS" or not guarded:
         return await call_next(request)
 
@@ -174,6 +181,33 @@ async def engine_proxy(rest: str, request: Request):
         headers=response_headers,
         media_type=upstream.headers.get("content-type"),
     )
+
+
+# ------------------------------------------------------------------
+# 「服务需求报表」子应用（/portal）
+#
+# 来源：原 DataFetchPortal（数据中台 · 对外数据拉取控制台）。
+# 它本身是一个独立的 FastAPI + Vue 应用，这里直接**挂载进同一个进程**，
+# 不另开端口 —— 好处是登录守卫自动覆盖它的接口，也不用多管一个进程。
+#
+# 挂载前做了两件事（改在 modules/service_demand 里）：
+#   1. 包名 app → service_portal：和平台后端的 app 包重名会 import 错
+#   2. 前端 vite base 改成 './'，api.js 按 /portal 前缀拼接口地址
+#
+# ⚠️ 必须注册在 SPA fallback 之前，否则 /portal/... 会被 /{full_path:path} 截走。
+# ------------------------------------------------------------------
+_SERVICE_DEMAND_BACKEND = PROJECT_ROOT / "modules" / "service_demand" / "backend"
+if (_SERVICE_DEMAND_BACKEND / "service_portal" / "main.py").is_file():
+    _sd_path = str(_SERVICE_DEMAND_BACKEND)
+    if _sd_path not in sys.path:
+        sys.path.insert(0, _sd_path)
+    try:
+        from service_portal.main import app as service_demand_app
+
+        app.mount("/portal", service_demand_app, name="service-demand")
+    except Exception as error:  # noqa: BLE001 - 子应用坏了不该拖垮主平台
+        # 只记日志：平台其他功能照常可用，用户点进该模块会看到 404
+        print(f"[WARN] 服务需求报表模块未能挂载：{error}")
 
 
 # ------------------------------------------------------------------

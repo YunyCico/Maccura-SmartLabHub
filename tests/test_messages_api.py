@@ -859,3 +859,506 @@ def test_all_day_event_due_has_no_clock(monkeypatch) -> None:
     items = adapter.fetch("u")
 
     assert items[0].due == "今天 全天"
+
+
+# ---------- OA 泛微表格 XML（2026-10-27 实测） ----------
+
+
+_WEAVER_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<table recordCount="205" pagenum="21" nowpage="1" pagesize="10">
+  <head>
+    <col column="requestname" text="请求标题"/>
+    <col column="creater" text="创建人"/>
+    <col column="createdate" text="创建日期"/>
+  </head>
+  <row>
+    <col column="requestname" linkvalue="5336870"
+         value="会议通知:&amp;nbsp;集团晋升政策宣讲 会议时间:2026-10-19"/>
+    <col column="creater" value="15824"/>
+    <col column="createdate" value="2026-10-19"/>
+  </row>
+  <row>
+    <col column="requestname" linkvalue="5312783"
+         value="2026年第八期公司级新员工入职引导培训"/>
+    <col column="creater" value="12218"/>
+    <col column="createdate" value="2026-10-13"/>
+  </row>
+</table>"""
+
+
+def _oa_adapter(monkeypatch, **overrides):
+    from app.services.oa_messages import OaAdapter
+
+    adapter = OaAdapter()
+    settings = dict(adapter._settings)
+    settings.update({
+        "base_url": "https://oa.example.com",
+        "auth_mode": "token",
+        "token": "ecology_JSessionId=abc",
+        "todo_path": "workflow/search/WFSearchResult.jsp?resourceid=15824",
+        "parser": "weaver_xml",
+        "page_id": "Wf:pendingMatters",
+        "field_map": '{"title":"requestname","due":"createdate","id":"requestid"}',
+        "max_items": 30,
+        "timeout_seconds": 10,
+    })
+    settings.update(overrides)
+    adapter._settings = settings
+    return adapter
+
+
+def test_oa_weaver_xml_parses_rows() -> None:
+    """泛微表格 XML → 待办条目。
+
+    行结构：每行是 <row>，里面按列的 column 属性给值；
+    标题在 requestname 的 value，详情 ID 在同列的 linkvalue。
+    """
+    adapter = _oa_adapter(monkeypatch=None)
+    items = adapter._parse_weaver_xml(_WEAVER_XML)
+    assert len(items) == 2
+    first = items[0]
+    assert "集团晋升政策宣讲" in first.title
+    # &nbsp; 要反转义成空格，不能把实体原样显示
+    assert "&nbsp;" not in first.title
+    assert first.external_id == "5336870"
+    assert first.due == "2026-10-19"
+    assert "requestid=5336870" in first.url
+    # creater 是用户 ID 不是姓名，不该当创建人展示
+    assert first.creator == ""
+
+
+def test_oa_weaver_xml_total_in_detail() -> None:
+    """detail 里带上总条数——用户能一眼看出还有多少没处理。"""
+    adapter = _oa_adapter(monkeypatch=None)
+    items = adapter._parse_weaver_xml(_WEAVER_XML)
+    assert "205" in items[0].detail
+
+
+def test_oa_weaver_xml_respects_max_items() -> None:
+    adapter = _oa_adapter(monkeypatch=None, max_items=1)
+    assert len(adapter._parse_weaver_xml(_WEAVER_XML)) == 1
+
+
+def test_oa_weaver_xml_bad_xml_sets_error() -> None:
+    adapter = _oa_adapter(monkeypatch=None)
+    assert adapter._parse_weaver_xml("<table><row>") == []
+    assert "XML 解析失败" in adapter.error
+
+
+def test_oa_query_kwargs_omits_empty_params() -> None:
+    """★ params={} 会让 httpx 把 URL 里原有的查询串替换掉。
+
+    实测：...?resourceid=15824 变成光秃秃的 .jsp，拿回来的是另一个页面，
+    怎么都解析不出 tableString。所以空参数必须不传 params。
+    """
+    from app.services.oa_messages import _query_kwargs
+
+    assert _query_kwargs("") == {}
+    assert _query_kwargs("   ") == {}
+    assert _query_kwargs("a=1&b=2") == {"params": {"a": "1", "b": "2"}}
+
+
+def test_oa_headers_use_browser_user_agent() -> None:
+    """必须伪装浏览器 UA：企业网关按 UA 拦非浏览器客户端（实测直接 404）。"""
+    adapter = _oa_adapter(monkeypatch=None)
+    headers = adapter._auth_headers()
+    assert "Mozilla" in headers["User-Agent"]
+    assert "SmartLabHub" not in headers["User-Agent"]
+
+
+def test_oa_weaver_xml_sends_referer(monkeypatch) -> None:
+    """第二步取 XML **必须带 Referer**，否则 Resin 直接 404。"""
+    adapter = _oa_adapter(monkeypatch=None)
+    seen = {}
+
+    class FakeResp:
+        status_code = 200
+        text = _WEAVER_XML
+        url = "https://oa.example.com/x"
+
+    class FakeClient:
+        def get(self, url, headers=None, params=None, timeout=None, **kw):
+            if "WFSearchResult" in url:
+                return type("R", (), {
+                    "status_code": 200,
+                    "text": 'var __tableStringKey__="ABCDEF0123456789ABCDEF0123456789";',
+                    "url": url,
+                })()
+            seen["headers"] = headers
+            seen["params"] = params
+            seen["url"] = url
+            return FakeResp()
+
+    adapter._fetch_weaver_xml(FakeClient(), {"User-Agent": "Mozilla/5.0"})
+    assert "Referer" in seen["headers"], "第二步必须带 Referer"
+    assert "WFSearchResult" in seen["headers"]["Referer"]
+    assert seen["params"]["tableString"] == "ABCDEF0123456789ABCDEF0123456789"
+    assert seen["params"]["pageId"] == "Wf:pendingMatters"
+    assert "SplitPageXmlServlet" in seen["url"]
+
+
+# ---------- OA 泛微表格 XML（2026-10-27 实测） ----------
+
+
+_WEAVER_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<table recordCount="205" pagenum="21" nowpage="1" pagesize="10">
+  <head>
+    <col column="requestname" text="请求标题"/>
+    <col column="creater" text="创建人"/>
+    <col column="createdate" text="创建日期"/>
+  </head>
+  <row>
+    <col column="requestname" linkvalue="5336870"
+         value="会议通知:&amp;nbsp;集团晋升政策宣讲 会议时间:2026-10-19"/>
+    <col column="creater" value="15824"/>
+    <col column="createdate" value="2026-10-19"/>
+  </row>
+  <row>
+    <col column="requestname" linkvalue="5312783"
+         value="2026年第八期公司级新员工入职引导培训"/>
+    <col column="creater" value="12218"/>
+    <col column="createdate" value="2026-10-13"/>
+  </row>
+</table>"""
+
+
+def _oa_adapter(monkeypatch, **overrides):
+    from app.services.oa_messages import OaAdapter
+
+    adapter = OaAdapter()
+    settings = dict(adapter._settings)
+    settings.update({
+        "base_url": "https://oa.example.com",
+        "auth_mode": "token",
+        "token": "ecology_JSessionId=abc",
+        "todo_path": "workflow/search/WFSearchResult.jsp?resourceid=15824",
+        "parser": "weaver_xml",
+        "page_id": "Wf:pendingMatters",
+        "field_map": '{"title":"requestname","due":"createdate","id":"requestid"}',
+        "max_items": 30,
+        "timeout_seconds": 10,
+    })
+    settings.update(overrides)
+    adapter._settings = settings
+    return adapter
+
+
+def test_oa_weaver_xml_parses_rows() -> None:
+    """泛微表格 XML → 待办条目。
+
+    行结构：每行是 <row>，里面按列的 column 属性给值；
+    标题在 requestname 的 value，详情 ID 在同列的 linkvalue。
+    """
+    adapter = _oa_adapter(monkeypatch=None)
+    items = adapter._parse_weaver_xml(_WEAVER_XML)
+    assert len(items) == 2
+    first = items[0]
+    assert "集团晋升政策宣讲" in first.title
+    # &nbsp; 要反转义成空格，不能把实体原样显示
+    assert "&nbsp;" not in first.title
+    assert first.external_id == "5336870"
+    assert first.due == "2026-10-19"
+    assert "requestid=5336870" in first.url
+    # creater 是用户 ID 不是姓名，不该当创建人展示
+    assert first.creator == ""
+
+
+def test_oa_weaver_xml_total_in_detail() -> None:
+    """detail 里带上总条数——用户能一眼看出还有多少没处理。"""
+    adapter = _oa_adapter(monkeypatch=None)
+    items = adapter._parse_weaver_xml(_WEAVER_XML)
+    assert "205" in items[0].detail
+
+
+def test_oa_weaver_xml_respects_max_items() -> None:
+    adapter = _oa_adapter(monkeypatch=None, max_items=1)
+    assert len(adapter._parse_weaver_xml(_WEAVER_XML)) == 1
+
+
+def test_oa_weaver_xml_bad_xml_sets_error() -> None:
+    adapter = _oa_adapter(monkeypatch=None)
+    assert adapter._parse_weaver_xml("<table><row>") == []
+    assert "XML 解析失败" in adapter.error
+
+
+def test_oa_query_kwargs_omits_empty_params() -> None:
+    """★ params={} 会让 httpx 把 URL 里原有的查询串替换掉。
+
+    实测：...?resourceid=15824 变成光秃秃的 .jsp，拿回来的是另一个页面，
+    怎么都解析不出 tableString。所以空参数必须不传 params。
+    """
+    from app.services.oa_messages import _query_kwargs
+
+    assert _query_kwargs("") == {}
+    assert _query_kwargs("   ") == {}
+    assert _query_kwargs("a=1&b=2") == {"params": {"a": "1", "b": "2"}}
+
+
+def test_oa_headers_use_browser_user_agent() -> None:
+    """必须伪装浏览器 UA：企业网关按 UA 拦非浏览器客户端（实测直接 404）。"""
+    adapter = _oa_adapter(monkeypatch=None)
+    headers = adapter._auth_headers()
+    assert "Mozilla" in headers["User-Agent"]
+    assert "SmartLabHub" not in headers["User-Agent"]
+
+
+def test_oa_weaver_xml_sends_referer(monkeypatch) -> None:
+    """第二步取 XML **必须带 Referer**，否则 Resin 直接 404。"""
+    adapter = _oa_adapter(monkeypatch=None)
+    seen = {}
+
+    class FakeResp:
+        status_code = 200
+        text = _WEAVER_XML
+        url = "https://oa.example.com/x"
+
+    class FakeClient:
+        def get(self, url, headers=None, params=None, timeout=None, **kw):
+            if "WFSearchResult" in url:
+                return type("R", (), {
+                    "status_code": 200,
+                    "text": 'var __tableStringKey__="ABCDEF0123456789ABCDEF0123456789";',
+                    "url": url,
+                })()
+            seen["headers"] = headers
+            seen["params"] = params
+            seen["url"] = url
+            return FakeResp()
+
+    adapter._fetch_weaver_xml(FakeClient(), {"User-Agent": "Mozilla/5.0"})
+    assert "Referer" in seen["headers"], "第二步必须带 Referer"
+    assert "WFSearchResult" in seen["headers"]["Referer"]
+    assert seen["params"]["tableString"] == "ABCDEF0123456789ABCDEF0123456789"
+    assert seen["params"]["pageId"] == "Wf:pendingMatters"
+    assert "SplitPageXmlServlet" in seen["url"]
+
+
+# ---------- OA 登录端点（2026-10-27） ----------
+
+
+def test_oa_login_requires_credentials(monkeypatch) -> None:
+    """没填账号密码要说清缺什么。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.services import integration_config
+
+    original = integration_config.load_config
+
+    def fake_load(*a, **k):
+        cfg = original()
+        cfg["oa"] = {**cfg.get("oa", {}), "base_url": "https://oa.example.com",
+                     "username": "", "password": ""}
+        return cfg
+
+    import app.api.integrations as api
+
+    monkeypatch.setattr(api.integration_config, "load_config", fake_load)
+    with TestClient(app) as client:
+        resp = client.post("/api/integrations/oa/login", json={"username": "", "password": ""})
+    data = resp.json()
+    assert data["ok"] is False
+    assert "账号" in data["detail"] or "密码" in data["detail"], data
+
+
+def test_oa_login_failure_reports_reason(monkeypatch) -> None:
+    """登录失败必须回可读原因，不能 500、也不能假装成功。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.services.oa_messages import OaAdapter
+
+    monkeypatch.setattr(
+        OaAdapter, "login_and_get_cookie",
+        lambda self: ("", "登录未通过：账号或密码不正确"),
+    )
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/integrations/oa/login",
+            json={"username": "u", "password": "p"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert "账号或密码" in data["detail"], data
+
+
+def test_oa_login_success_saves_password_mode(monkeypatch) -> None:
+    """登录成功后要落盘「账号密码 + password 模式」，而不是只存会话。
+
+    存会话 cookie 会过期；存账号密码才能每次自动登录。
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.services.oa_messages import OaAdapter
+
+    saved: dict = {}
+
+    monkeypatch.setattr(
+        OaAdapter, "login_and_get_cookie",
+        lambda self: ("ecology_JSessionId=abc; JSESSIONID=abc", ""),
+    )
+    monkeypatch.setattr(OaAdapter, "fetch", lambda self: [])
+    monkeypatch.setattr(OaAdapter, "error", property(lambda self: ""))
+    import app.api.integrations as api
+
+    monkeypatch.setattr(
+        api.integration_config, "save_config",
+        lambda updates, **kw: saved.update(updates) or {"oa": saved.get("oa", {})},
+    )
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/integrations/oa/login",
+            json={"username": "15824", "password": "pwd"},
+        )
+    data = resp.json()
+    assert data["ok"] is True, data
+    assert saved["oa"]["auth_mode"] == "password"
+    assert saved["oa"]["username"] == "15824"
+    assert saved["oa"]["password"] == "pwd"
+    # 会话也留一份兜底
+    assert "ecology_JSessionId" in saved["oa"]["token"]
+
+
+def test_oa_login_never_requires_totp() -> None:
+    """OA 不需要动态令牌——配置里不该出现 totp 相关字段。"""
+    from app.services import integration_config
+
+    fields = integration_config.ALLOWED_FIELDS["oa"]
+    assert not any("totp" in f for f in fields), "OA 不该有 TOTP 字段"
+
+
+def test_oa_login_success_judged_by_yili_cookie(monkeypatch) -> None:
+    """登录成功的判据是 yili_userid / loginidweaver cookie。
+
+    实测：泛微登录成功后**不返回 302**，而是 200 + 空 body，靠前端 JS 跳转。
+    所以不能按「最终 URL 是否离开 Login.jsp」判断——那样会把成功误判成失败。
+    """
+    from app.services.oa_messages import OaAdapter
+
+    class FakeCookies:
+        def __init__(self, names):
+            self.jar = [type("C", (), {"name": n, "value": "x"})() for n in names]
+
+    class FakeClient:
+        def __init__(self, names):
+            self.cookies = FakeCookies(names)
+
+        def get(self, *a, **k):
+            return type("R", (), {
+                "status_code": 200,
+                "text": '<input type="hidden" name="logintype" value="1">'
+                        '<input type="hidden" name="loginfile" value="x">',
+                "url": "https://oa.example.com/login/Login.jsp",
+            })()
+
+        def post(self, *a, **k):
+            # 登录成功：200 + 空 body，URL 仍是 VerifyLogin.jsp
+            return type("R", (), {
+                "status_code": 200, "text": "",
+                "url": "https://oa.example.com/login/VerifyLogin.jsp",
+            })()
+
+    adapter = OaAdapter()
+    adapter._settings = {**adapter._settings, "base_url": "https://oa.example.com",
+                         "username": "10399", "password": "p"}
+
+    # 成功：带 yili_userid
+    ok, detail = adapter._do_login(FakeClient(["ecology_JSessionId", "yili_userid"]))
+    assert ok is True, detail
+
+    # 失败：只有会话 cookie
+    ok2, detail2 = adapter._do_login(FakeClient(["ecology_JSessionId", "JSESSIONID"]))
+    assert ok2 is False
+    assert "账号或密码" in detail2
+
+
+def test_oa_login_success_judged_by_yili_cookie(monkeypatch) -> None:
+    """登录成功的判据是 yili_userid / loginidweaver cookie。
+
+    实测：泛微登录成功后**不返回 302**，而是 200 + 空 body，靠前端 JS 跳转。
+    所以不能按「最终 URL 是否离开 Login.jsp」判断——那样会把成功误判成失败。
+    """
+    from app.services.oa_messages import OaAdapter
+
+    class FakeCookies:
+        def __init__(self, names):
+            self.jar = [type("C", (), {"name": n, "value": "x"})() for n in names]
+
+    class FakeClient:
+        def __init__(self, names):
+            self.cookies = FakeCookies(names)
+
+        def get(self, *a, **k):
+            return type("R", (), {
+                "status_code": 200,
+                "text": '<input type="hidden" name="logintype" value="1">'
+                        '<input type="hidden" name="loginfile" value="x">',
+                "url": "https://oa.example.com/login/Login.jsp",
+            })()
+
+        def post(self, *a, **k):
+            # 登录成功：200 + 空 body，URL 仍是 VerifyLogin.jsp
+            return type("R", (), {
+                "status_code": 200, "text": "",
+                "url": "https://oa.example.com/login/VerifyLogin.jsp",
+            })()
+
+    adapter = OaAdapter()
+    adapter._settings = {**adapter._settings, "base_url": "https://oa.example.com",
+                         "username": "10399", "password": "p"}
+
+    # 成功：带 yili_userid
+    ok, detail = adapter._do_login(FakeClient(["ecology_JSessionId", "yili_userid"]))
+    assert ok is True, detail
+
+    # 失败：只有会话 cookie
+    ok2, detail2 = adapter._do_login(FakeClient(["ecology_JSessionId", "JSESSIONID"]))
+    assert ok2 is False
+    assert "账号或密码" in detail2
+
+
+def test_oa_token_mode_skips_login(monkeypatch) -> None:
+    """token 模式（直接带 Cookie）不该去跑登录流程。
+
+    回归防护：重写 _login 时曾漏掉这个判断，导致 token 模式也去登录，
+    而配置里没有账号密码 → 首页取数全挂。
+    """
+    from app.services.oa_messages import OaAdapter
+
+    adapter = OaAdapter()
+    adapter._settings = {**adapter._settings, "auth_mode": "token", "token": "ecology_JSessionId=abc"}
+
+    called = {"n": 0}
+
+    def boom(client):
+        called["n"] += 1
+        return False, "不该走到这里"
+
+    monkeypatch.setattr(adapter, "_do_login", boom)
+    assert adapter._login(object()) is True
+    assert called["n"] == 0, "token 模式不该调用登录"
+
+
+def test_oa_token_mode_skips_login(monkeypatch) -> None:
+    """token 模式（直接带 Cookie）不该去跑登录流程。
+
+    回归防护：重写 _login 时曾漏掉这个判断，导致 token 模式也去登录，
+    而配置里没有账号密码 → 首页取数全挂。
+    """
+    from app.services.oa_messages import OaAdapter
+
+    adapter = OaAdapter()
+    adapter._settings = {**adapter._settings, "auth_mode": "token", "token": "ecology_JSessionId=abc"}
+
+    called = {"n": 0}
+
+    def boom(client):
+        called["n"] += 1
+        return False, "不该走到这里"
+
+    monkeypatch.setattr(adapter, "_do_login", boom)
+    assert adapter._login(object()) is True
+    assert called["n"] == 0, "token 模式不该调用登录"

@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务需求BI看板</title>
+<!-- 本地化依赖：内网无法访问公网 CDN -->
+<script src="/vendor/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+.header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px 30px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.header h1{font-size:24px;font-weight:700;letter-spacing:1px}
+.header .sub{font-size:13px;opacity:.85;margin-top:4px}
+.header-right{display:flex;align-items:center;gap:16px}
+.import-btn{background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.5);color:#fff;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:all .3s}
+.import-btn:hover{background:rgba(255,255,255,.3);border-color:#fff}
+.save-btn{background:#fff;color:#667eea;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;transition:all .3s;box-shadow:0 2px 6px rgba(102,126,234,.25)}
+.save-btn:hover{background:#f4f6ff;box-shadow:0 4px 12px rgba(102,126,234,.35);transform:translateY(-1px)}
+.save-btn:active{transform:translateY(0)}
+a.save-btn{display:inline-block;text-decoration:none;line-height:1.4}
+.clear-btn{background:rgba(255,120,120,.22);border:2px solid rgba(255,180,180,.6);color:#fff;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:all .3s}
+.clear-btn:hover{background:rgba(255,90,90,.38);border-color:#ffb3b3}
+.clear-btn:active{transform:translateY(1px)}
+.data-info{font-size:12px;opacity:.8;text-align:right}
+.filters{background:#fff;padding:14px 30px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px}
+.filters label{font-size:13px;color:#666;font-weight:600}
+.filters select,.filters input[type=date]{padding:6px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;transition:border-color .3s}
+.filters select:focus,.filters input:focus{border-color:#667eea}
+.reset-btn{background:#ff6b6b;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:background .3s}
+.reset-btn:hover{background:#ee5a5a}
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;padding:0 20px;margin-bottom:16px}
+.kpi-card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);text-align:center;transition:transform .3s,box-shadow .3s;position:relative;overflow:hidden}
+.kpi-card:hover{transform:translateY(-3px);box-shadow:0 4px 16px rgba(0,0,0,.1)}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;width:100%;height:4px}
+.kpi-card:nth-child(1)::before{background:#667eea}
+.kpi-card:nth-child(2)::before{background:#36cfc9}
+.kpi-card:nth-child(3)::before{background:#ff85c0}
+.kpi-card:nth-child(4)::before{background:#ffc53d}
+.kpi-card:nth-child(5)::before{background:#73d13d}
+.kpi-label{font-size:13px;color:#888;margin-bottom:8px;font-weight:600}
+.kpi-value{font-size:32px;font-weight:700;color:#333}
+.kpi-unit{font-size:14px;color:#aaa;margin-left:4px}
+.chart-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:0 20px 24px}
+.chart-card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.chart-card .title{font-size:15px;font-weight:700;color:#444;margin-bottom:8px;padding-left:10px;border-left:4px solid #667eea}
+.chart-box{width:100%;height:300px}
+.section-divider{grid-column:1/-1;padding:8px 0 0;margin-top:4px}
+.section-divider span{font-size:16px;font-weight:700;color:#555;padding:4px 16px;background:linear-gradient(90deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;border-bottom:2px solid #eee;display:inline-block}
+.detail-section{padding:0 20px 24px;margin-top:4px}
+.detail-card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.detail-toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.detail-toolbar .count{font-size:13px;color:#888;font-weight:600}
+.detail-pager{display:flex;align-items:center;gap:10px}
+.detail-pager button{background:#667eea;color:#fff;border:none;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:background .3s}
+.detail-pager button:hover{background:#5a6fd6}
+.detail-pager button:disabled{background:#cfd4f0;cursor:not-allowed}
+.detail-pager span{font-size:13px;color:#666;min-width:90px;text-align:center}
+.detail-table-wrap{width:100%;max-height:460px;overflow:auto;border:1px solid #e8e8f0;border-radius:8px}
+#detailTable{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+#detailTable th{position:sticky;top:0;z-index:1;background:#667eea;color:#fff;padding:8px 12px;text-align:left;font-weight:600;white-space:nowrap;border-right:1px solid rgba(255,255,255,.18)}
+#detailTable td{padding:6px 12px;border-bottom:1px solid #f0f0f4;color:#555;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;border-right:1px solid #f5f5f8}
+#detailTable th:last-child,#detailTable td:last-child{border-right:none}
+#detailTable tbody tr:nth-child(even) td{background:#fafbff}
+#detailTable tbody tr:hover td{background:#eef1ff}
+#detailTable td.idx{color:#bbb;max-width:none}
+#fileInput{display:none}
+.toast{position:fixed;top:72px;right:20px;background:#333;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;z-index:9999;opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s;pointer-events:none}
+.toast.show{opacity:1;visibility:visible;pointer-events:auto;cursor:pointer}
+
+/* ==================== 关键指标解读与数据诊断 ==================== */
+.ins-wrap{padding:0 20px 8px;margin-top:4px}
+.ins-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.ins-head .t{font-size:16px;font-weight:700;color:#555;padding-left:10px;border-left:4px solid #667eea;line-height:1.4}
+.ins-head .d{font-size:12px;color:#999;margin-top:4px;padding-left:14px}
+.ins-tools{display:flex;gap:8px;align-items:center}
+.ins-btn{background:#fff;border:1px solid #d9dcf5;color:#667eea;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all .25s}
+.ins-btn:hover{background:#667eea;color:#fff;border-color:#667eea}
+.ins-card{background:#fff;border-radius:12px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.ins-card+.ins-card{margin-top:14px}
+.ins-card-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #f0f0f6}
+.ins-card-hd h3{font-size:15px;font-weight:700;color:#444}
+.ins-card-hd .sub{font-size:12px;color:#999;margin-left:auto}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:10px;line-height:18px;white-space:nowrap}
+.tag.red{background:#ffecec;color:#d94b4b}
+.tag.orange{background:#fff5e0;color:#c98a00}
+.tag.blue{background:#e8f3fb;color:#3b87b8}
+.tag.green{background:#eaf7ea;color:#3f9e3f}
+.tag.gray{background:#f0f0f4;color:#8a8a99}
+.quick-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:14px}
+.qc{border-left:4px solid #ccc;padding:14px 16px}
+.qc.lv1{border-left-color:#ee6666}
+.qc.lv2{border-left-color:#fac858}
+.qc.lv3{border-left-color:#73c0de}
+.qc .qn{font-size:12px;color:#888;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.qc .qv{font-size:24px;font-weight:700;color:#333;margin:6px 0 2px;line-height:1.2}
+.qc .qv small{font-size:13px;color:#aaa;font-weight:600;margin-left:3px}
+.qc .qb{font-size:12px;color:#777;line-height:1.75;padding-top:9px;margin-top:8px;border-top:1px dashed #eee}
+.qc .qb b{color:#d94b4b;font-weight:700}
+.qc .qb i{color:#3f9e3f;font-style:normal;font-weight:700}
+.diag-wrap{overflow:auto;border:1px solid #eee;border-radius:8px}
+.diag-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:760px}
+.diag-table th{background:#f7f8fc;color:#555;font-weight:700;padding:9px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid #e8e8f0;position:sticky;top:0;z-index:1}
+.diag-table th:first-child,.diag-table td:first-child{text-align:left}
+.diag-table th.grp{text-align:center;background:#eef1ff;color:#5a6fd6}
+.diag-table td{padding:8px 10px;text-align:right;border-bottom:1px solid #f5f5f8;color:#555;white-space:nowrap}
+.diag-table tbody tr:hover td{background:#fafbff}
+.diag-table tr.sub-hd td{background:#f7f8fc;font-weight:700;color:#667eea;text-align:left;font-size:12px;padding:6px 10px}
+.diag-table td.name{font-weight:600;color:#444;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.dg{display:inline-block;min-width:30px;padding:1px 7px;border-radius:9px;font-size:11.5px;font-weight:700}
+.dg.g{background:#eaf7ea;color:#3f9e3f}
+.dg.y{background:#fff5e0;color:#c98a00}
+.dg.r{background:#ffecec;color:#d94b4b}
+.diag-note{font-size:12px;color:#888;line-height:1.8;margin-top:10px;padding:9px 12px;background:#fafbfc;border-radius:6px;border-left:3px solid #ddd}
+.dq-list{display:flex;flex-direction:column;gap:8px}
+.dq{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:#666;line-height:1.75;padding:9px 12px;border-radius:6px;background:#fffdf5;border-left:3px solid #fac858}
+.dq.ok{background:#f5fbf5;border-left-color:#91cc75}
+.dq.bad{background:#fff5f5;border-left-color:#ee6666}
+.dq .dk{flex:0 0 auto;font-weight:700;color:#8a6d00}
+.dq.bad .dk{color:#d94b4b}
+.dq.ok .dk{color:#3f9e3f}
+.dq b{color:#d94b4b;font-weight:700}
+.ins-empty{text-align:center;padding:40px;color:#bbb;font-size:13px}
+.ins-foot{font-size:11.5px;color:#aaa;line-height:1.8;padding:12px 4px 0}
+@media(max-width:1200px){.quick-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:768px){.quick-row{grid-template-columns:1fr}}
+@media(max-width:1200px){.chart-grid{grid-template-columns:repeat(2,1fr)}.kpi-row{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:768px){.chart-grid{grid-template-columns:1fr}.kpi-row{grid-template-columns:repeat(2,1fr)}.header{flex-direction:column;gap:10px}}
+</style>
+<body>
+
+<div class="header">
+    <div>
+        <h1>服务需求BI看板</h1>
+        <div class="sub">多维度数据分析与可视化平台</div>
+    </div>
+    <div class="header-right">
+        <div class="data-info">
+            <div id="dataCount">数据量：0 条</div>
+            <div id="updateTime">更新时间：2026/10/20 14:34:40</div>
+        </div>
+        <button class="import-btn" onclick="loadFromBackend(true)">重新加载平台数据</button>
+        <a class="save-btn" href="/api/bi/export.xlsx" download>下载 Excel</a>
+        <button class="save-btn" onclick="saveData()" title="将当前最新数据写入 HTML 文件，下次打开即为新数据">保存数据</button>
+        <button class="clear-btn" onclick="clearData()" title="清空当前全部数据（含图表与明细），可再重新加载平台数据">清空数据</button>
+    </div>
+</div>
+
+<div class="filters">
+    <label>大区：</label>
+    <select id="filterRegion"><option value="">全部</option></select>
+    <label>解决部门：</label>
+    <select id="filterDept"><option value="">全部</option></select>
+    <label>问题状态：</label>
+    <select id="filterStatus"><option value="">全部</option></select>
+    <label>开始日期：</label>
+    <input type="date" id="filterStart">
+    <label>结束日期：</label>
+    <input type="date" id="filterEnd">
+    <button class="reset-btn" onclick="resetFilters()">重置筛选</button>
+</div>
+
+<div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-label">总需求数</div><div class="kpi-value" id="kpiTotal">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">响应数量</div><div class="kpi-value" id="kpiResponse">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">上升数量</div><div class="kpi-value" id="kpiEscalation">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">平均满意度</div><div class="kpi-value" id="kpiSatisfaction">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">归档率</div><div class="kpi-value" id="kpiArchiveRate">0<span class="kpi-unit">%</span></div></div>
+</div>
+
+<div class="ins-wrap">
+    <div class="ins-head">
+        <div>
+            <div class="t">关键指标解读与数据诊断</div>
+            <div class="sub-note d" id="insScope">统计范围：当前筛选后 0 条 / 全量 0 条 · 结论随筛选实时刷新</div>
+        </div>
+        <div class="ins-tools">
+            <button class="ins-btn" onclick="toggleInsight()">收起/展开</button>
+        </div>
+    </div>
+
+    <div id="insBody">
+        <!-- 四张速读卡 -->
+        <div class="quick-row" id="quickRow"></div>
+
+        <!-- 分维度诊断 -->
+        <div class="ins-card">
+            <div class="ins-card-hd">
+                <h3>分维度诊断矩阵</h3>
+                <span class="sub">达标线：满意度≥3.5 / 响应率≥70% / 上升率≤40% / 归档率≥70%</span>
+            </div>
+            <div class="diag-wrap">
+                <table class="diag-table" id="diagTable"></table>
+            </div>
+            <div class="diag-note" id="diagNote"></div>
+        </div>
+
+        <!-- 数据质量与口径 -->
+        <div class="ins-card">
+            <div class="ins-card-hd">
+                <h3>数据质量与口径提示</h3>
+                <span class="sub">影响结论可信度，需先修数据再看趋势</span>
+            </div>
+            <div class="dq-list" id="dqList"></div>
+            <div class="ins-foot" id="insFoot"></div>
+        </div>
+
+        <!-- 数据口径说明（来自后端映射规则） -->
+        <div class="ins-card" id="diffCard" style="display:none">
+            <div class="ins-card-hd">
+                <h3>本表数据口径说明</h3>
+                <span class="sub">看板字段与数据中台真实表的对应关系</span>
+            </div>
+            <div class="dq-list" id="diffList"></div>
+        </div>
+    </div>
+</div>
+
+<div class="chart-grid">
+    <div class="section-divider"><span>区域与时间分析</span></div>
+
+    <div class="chart-card"><div class="title">大区分布</div><div class="chart-box" id="chartRegion" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">省份分布</div><div class="chart-box" id="chartProvince" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">日期趋势</div><div class="chart-box" id="chartDate" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+
+    <div class="section-divider"><span>分类与来源分析</span></div>
+
+    <div class="chart-card"><div class="title">二级分类分布</div><div class="chart-box" id="chartCat2" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">三级分类分布</div><div class="chart-box" id="chartCat3" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">反馈来源分布</div><div class="chart-box" id="chartSource" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+
+    <div class="section-divider"><span>实验室与人员分析</span></div>
+
+    <div class="chart-card"><div class="title">智汇实验室类别分布</div><div class="chart-box" id="chartLab" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">指派人员分布</div><div class="chart-box" id="chartAssignee" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">解决部门分布</div><div class="chart-box" id="chartDept" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+
+    <div class="section-divider"><span>响应与上升分析</span></div>
+
+    <div class="chart-card"><div class="title">响应数量分布</div><div class="chart-box" id="chartResponse" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">上升数量分布</div><div class="chart-box" id="chartEscalation" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">上升类型分布</div><div class="chart-box" id="chartEscType" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+
+    <div class="section-divider"><span>状态与满意度分析</span></div>
+
+    <div class="chart-card"><div class="title">问题状态分布</div><div class="chart-box" id="chartStatus" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">客户满意度分布</div><div class="chart-box" id="chartSatisfaction" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+    <div class="chart-card"><div class="title">归档分布</div><div class="chart-box" id="chartArchive" _echarts_instance_="" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"></div></div>
+</div>
+
+<div class="detail-section">
+    <div class="section-divider"><span>源数据明细</span></div>
+    <div class="detail-card">
+        <div class="detail-toolbar">
+            <span class="count" id="detailCount">共 0 条 · 悬浮单元格可查看完整文本</span>
+            <div class="detail-pager">
+                <button id="detailPrev" onclick="pageDetail(-1)" disabled="">上一页</button>
+                <span id="detailPageInfo">第 1 / 1 页</span>
+                <button id="detailNext" onclick="pageDetail(1)" disabled="">下一页</button>
+            </div>
+        </div>
+        <div class="detail-table-wrap">
+            <table id="detailTable"><thead><tr><th style="min-width:44px">#</th></tr></thead><tbody><tr><td colspan="1" style="text-align:center;padding:36px;color:#aaa;white-space:normal">暂无源数据，请点击右上角"重新加载平台数据"</td></tr></tbody></table>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ======================== EMBEDDED DATA ========================
+var RAW_DATA = [];
+// 后端返回的数据集元信息（表中文名、维度口径、差异说明等）
+var RAW_META = null;
+
+// ======================== COLUMN MAPPING ========================
+// Flexible column name matching for imported files
+var COL_MAP = {};
+
+function buildColMap(row) {
+    if (!row) return;
+    COL_MAP = {};
+    var keys = Object.keys(row);
+    var matchList = [
+        ['region', ['大区']],
+        ['province', ['省份']],
+        ['date', ['反馈日期', '日期']],
+        ['cat1', ['一级分类']],
+        ['cat2', ['二级分类']],
+        ['cat3', ['三级分类']],
+        ['source', ['反馈来源']],
+        ['lab', ['智汇实验室', '智慧实验室', '实验室分类']],
+        ['assignee', ['指派人员']],
+        ['dept', ['解决部门']],
+        ['responded', ['是否响应']],
+        ['escalated', ['是否上升']],
+        ['escType', ['上升类型']],
+        ['status', ['问题状态']],
+        ['satisfaction', ['客户满意度', '满意度']],
+        ['archived', ['是否归档', '归档']],
+        ['unableReason', ['无法解决原因']],
+        ['estDate', ['预计解决日期']]
+    ];
+    matchList.forEach(function(m) {
+        var key = m[0], patterns = m[1];
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i].replace(/\n/g, '').replace(/\s/g, '');
+            for (var j = 0; j < patterns.length; j++) {
+                if (k.indexOf(patterns[j]) >= 0) {
+                    COL_MAP[key] = keys[i];
+                    return;
+                }
+            }
+        }
+    });
+}
+
+function getVal(row, field) {
+    var col = COL_MAP[field];
+    if (!col) return '';
+    var v = row[col];
+    if (v === undefined || v === null) return '';
+    var s = String(v).trim();
+    if (s === '\\' || s === '-' || s === '') return '';
+    return s;
+}
+
+function parseDate(s) {
+    if (!s) return null;
+    // Handle Excel serial number
+    if (typeof s === 'number') {
+        var d = new Date(Math.round((s - 25569) * 86400 * 1000));
+        return d;
+    }
+    s = String(s).trim();
+    if (!s || s === '\\') return null;
+    var d = new Date(s);
+    if (isNaN(d.getTime())) {
+        var m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+        if (m) return new Date(m[1], m[2]-1, m[3]);
+        return null;
+    }
+    return d;
+}
+
+// ======================== DATA PROCESSING ========================
+var allData = [];
+var charts = {};
+// 保存功能状态：记录"最近一次使用的原始数据"，以及是否载入过数据
+var hasImported = false;
+var savedRawData = RAW_DATA;
+
+function normalizeData(rawRows) {
+    if (!rawRows || rawRows.length === 0) return [];
+    buildColMap(rawRows[0]);
+    var result = [];
+    for (var i = 0; i < rawRows.length; i++) {
+        var row = rawRows[i];
+        var region = getVal(row, 'region');
+        var province = getVal(row, 'province');
+        var dateStr = getVal(row, 'date');
+        var cat2 = getVal(row, 'cat2');
+        var cat3 = getVal(row, 'cat3');
+        var source = getVal(row, 'source');
+        var lab = getVal(row, 'lab');
+        var assignee = getVal(row, 'assignee');
+        var dept = getVal(row, 'dept');
+        var responded = getVal(row, 'responded');
+        var escalated = getVal(row, 'escalated');
+        var escType = getVal(row, 'escType');
+        var status = getVal(row, 'status');
+        var satisfaction = getVal(row, 'satisfaction');
+        var archived = getVal(row, 'archived');
+        var reason = getVal(row, 'unableReason');
+        var estDate = getVal(row, 'estDate');
+
+        // Skip header rows
+        if (region === '大区' || (!region && !province && !dept)) continue;
+
+        var dateObj = parseDate(dateStr);
+
+        result.push({
+            region: region,
+            province: province,
+            date: dateObj,
+            dateStr: dateObj ? dateObj.getFullYear() + '-' + String(dateObj.getMonth()+1).padStart(2,'0') : '',
+            cat2: cat2,
+            cat3: cat3,
+            source: source,
+            lab: lab,
+            assignee: assignee,
+            dept: dept,
+            responded: responded,
+            escalated: escalated,
+            escType: escType,
+            status: status,
+            satisfaction: satisfaction !== '' ? parseInt(satisfaction) : null,
+            archived: archived,
+            reason: reason,
+            estDate: estDate
+        });
+    }
+    return result;
+}
+
+function getFilteredData() {
+    var fRegion = document.getElementById('filterRegion').value;
+    var fDept = document.getElementById('filterDept').value;
+    var fStatus = document.getElementById('filterStatus').value;
+    var fStart = document.getElementById('filterStart').value;
+    var fEnd = document.getElementById('filterEnd').value;
+
+    return allData.filter(function(d) {
+        if (fRegion && d.region !== fRegion) return false;
+        if (fDept && d.dept !== fDept) return false;
+        if (fStatus && d.status !== fStatus) return false;
+        if (fStart && d.date) {
+            var s = new Date(fStart);
+            if (d.date < s) return false;
+        }
+        if (fEnd && d.date) {
+            var e = new Date(fEnd);
+            e.setHours(23,59,59);
+            if (d.date > e) return false;
+        }
+        return true;
+    });
+}
+
+function countBy(arr, fn) {
+    var map = {};
+    arr.forEach(function(d) {
+        var k = fn(d);
+        if (!k) k = '(空)';
+        map[k] = (map[k] || 0) + 1;
+    });
+    var entries = Object.entries(map);
+    entries.sort(function(a, b) { return b[1] - a[1]; });
+    return entries;
+}
+
+// ======================== CHART COLORS ========================
+var COLORS = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4','#ea7ccc','#5d7092','#c4ccd5','#f5994e','#7f9eb2','#d4a5a5','#b8d4a5'];
+var PIE_COLORS = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4','#ea7ccc','#5d7092','#c4ccd5','#f5994e'];
+
+function makeBarOption(title, data, color, horizontal) {
+    var names = data.map(function(d) { return d[0]; });
+    var values = data.map(function(d) { return d[1]; });
+    var option = {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: horizontal ? '20%' : '8%', right: '5%', bottom: horizontal ? '5%' : '15%', top: '8%' },
+        xAxis: {
+            type: horizontal ? 'value' : 'category',
+            data: horizontal ? null : names,
+            axisLabel: { rotate: horizontal ? 0 : 35, fontSize: 11, color: '#666' },
+            axisLine: { lineStyle: { color: '#ddd' } }
+        },
+        yAxis: {
+            type: horizontal ? 'category' : 'value',
+            data: horizontal ? names : null,
+            axisLabel: { fontSize: 11, color: '#666' },
+            axisLine: { lineStyle: { color: '#ddd' } },
+            splitLine: { lineStyle: { color: '#f0f0f0' } }
+        },
+        series: [{
+            type: 'bar',
+            data: values,
+            itemStyle: {
+                color: color || '#5470c6',
+                borderRadius: horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]
+            },
+            barMaxWidth: 36,
+            label: { show: true, position: horizontal ? 'right' : 'top', fontSize: 11, color: '#666' }
+        }]
+    };
+    return option;
+}
+
+function makePieOption(data, ring) {
+    return {
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11, color: '#666' } },
+        series: [{
+            type: 'pie',
+            radius: ring ? ['35%', '60%'] : '60%',
+            center: ['50%', '45%'],
+            data: data.map(function(d) {
+                return { name: d[0], value: d[1] };
+            }),
+            itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+            label: { fontSize: 11, color: '#666', formatter: '{b}\n{d}%' },
+            color: PIE_COLORS
+        }]
+    };
+}
+
+function makeLineOption(data) {
+    return {
+        tooltip: { trigger: 'axis' },
+        grid: { left: '8%', right: '5%', bottom: '15%', top: '8%' },
+        xAxis: {
+            type: 'category',
+            data: data.map(function(d) { return d[0]; }),
+            axisLabel: { rotate: 35, fontSize: 10, color: '#666' },
+            axisLine: { lineStyle: { color: '#ddd' } }
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { fontSize: 11, color: '#666' },
+            splitLine: { lineStyle: { color: '#f0f0f0' } },
+            axisLine: { lineStyle: { color: '#ddd' } }
+        },
+        series: [{
+            type: 'line',
+            data: data.map(function(d) { return d[1]; }),
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            lineStyle: { width: 2, color: '#667eea' },
+            itemStyle: { color: '#667eea' },
+            areaStyle: {
+                color: {
+                    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [
+                        { offset: 0, color: 'rgba(102,126,234,0.3)' },
+                        { offset: 1, color: 'rgba(102,126,234,0.02)' }
+                    ]
+                }
+            }
+        }]
+    };
+}
+
+// ======================== RENDER ========================
+function renderAll() {
+    var data = getFilteredData();
+
+    // KPI
+    var total = data.length;
+    var responded = data.filter(function(d) { return d.responded === '是'; }).length;
+    var escalated = data.filter(function(d) { return d.escalated === '是'; }).length;
+    var satValues = data.filter(function(d) { return d.satisfaction !== null && d.satisfaction !== undefined; }).map(function(d) { return d.satisfaction; });
+    var avgSat = satValues.length > 0 ? (satValues.reduce(function(a,b){return a+b;},0) / satValues.length).toFixed(2) : '0';
+    var archived = data.filter(function(d) { return d.archived === '是'; }).length;
+    var archiveRate = total > 0 ? ((archived / total) * 100).toFixed(1) : '0';
+
+    document.getElementById('kpiTotal').textContent = total;
+    document.getElementById('kpiResponse').textContent = responded;
+    document.getElementById('kpiEscalation').textContent = escalated;
+    document.getElementById('kpiSatisfaction').textContent = avgSat;
+    document.getElementById('kpiArchiveRate').innerHTML = archiveRate + '<span class="kpi-unit">%</span>';
+    document.getElementById('dataCount').textContent = '数据量：' + total + ' 条';
+
+    // Charts
+    renderChart('chartRegion', makeBarOption('大区', countBy(data, function(d){return d.region;}), '#5470c6'));
+    renderChart('chartProvince', makeBarOption('省份', countBy(data, function(d){return d.province;}).slice(0, 15), '#91cc75', true));
+    renderChart('chartDate', makeLineOption(countBy(data, function(d){return d.dateStr;}).sort(function(a,b){return a[0].localeCompare(b[0]);})));
+
+    renderChart('chartCat2', makePieOption(countBy(data, function(d){return d.cat2;}), true));
+    renderChart('chartCat3', makeBarOption('三级分类', countBy(data, function(d){return d.cat3;}).slice(0, 12), '#fac858', true));
+    renderChart('chartSource', makePieOption(countBy(data, function(d){return d.source;}), false));
+
+    renderChart('chartLab', makePieOption(countBy(data, function(d){return d.lab;}), false));
+    renderChart('chartAssignee', makeBarOption('指派人员', countBy(data, function(d){return d.assignee;}), '#3ba272'));
+    renderChart('chartDept', makeBarOption('解决部门', countBy(data, function(d){return d.dept;}), '#fc8452'));
+
+    renderChart('chartResponse', makePieOption(countBy(data, function(d){return d.responded === '是' ? '已响应' : (d.responded === '否' ? '未响应' : d.responded);}), false));
+    renderChart('chartEscalation', makePieOption(countBy(data, function(d){return d.escalated === '是' ? '已上升' : (d.escalated === '否' ? '未上升' : d.escalated);}), false));
+    renderChart('chartEscType', makeBarOption('上升类型', countBy(data.filter(function(d){return d.escalated === '是';}), function(d){return d.escType;}), '#ee6666', true));
+
+    renderChart('chartStatus', makePieOption(countBy(data, function(d){return d.status;}), false));
+
+    // Satisfaction: bar chart by score
+    var satBuckets = {};
+    [0,1,2,3,4,5].forEach(function(s){satBuckets[s] = 0;});
+    data.forEach(function(d){ if(d.satisfaction !== null && d.satisfaction !== undefined && satBuckets.hasOwnProperty(d.satisfaction)) satBuckets[d.satisfaction]++;});
+    var satData = Object.entries(satBuckets).map(function(k){return [k[0]+'分', k[1]];});
+    renderChart('chartSatisfaction', makeBarOption('满意度', satData, '#ffc53d'));
+
+    renderChart('chartArchive', makePieOption(countBy(data, function(d){return d.archived === '是' ? '已归档' : (d.archived === '否' ? '未归档' : d.archived);}), false));
+
+    // 关键指标解读与数据诊断（随筛选实时刷新）
+    renderInsight();
+}
+
+function renderChart(id, option) {
+    if (!charts[id]) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        charts[id] = echarts.init(el);
+    }
+    charts[id].setOption(option, true);
+}
+
+// ======================== FILTERS ========================
+function initFilters() {
+    var regions = [...new Set(allData.map(function(d){return d.region;}).filter(Boolean))].sort();
+    var depts = [...new Set(allData.map(function(d){return d.dept;}).filter(Boolean))].sort();
+    var statuses = [...new Set(allData.map(function(d){return d.status;}).filter(Boolean))].sort();
+
+    fillSelect('filterRegion', regions);
+    fillSelect('filterDept', depts);
+    fillSelect('filterStatus', statuses);
+
+    ['filterRegion','filterDept','filterStatus','filterStart','filterEnd'].forEach(function(id) {
+        document.getElementById(id).addEventListener('change', renderAll);
+    });
+}
+
+function fillSelect(id, options) {
+    var sel = document.getElementById(id);
+    var current = sel.value;
+    sel.innerHTML = '<option value="">全部</option>';
+    options.forEach(function(o) {
+        var opt = document.createElement('option');
+        opt.value = o;
+        opt.textContent = o;
+        sel.appendChild(opt);
+    });
+    sel.value = current;
+}
+
+function resetFilters() {
+    ['filterRegion','filterDept','filterStatus','filterStart','filterEnd'].forEach(function(id) {
+        document.getElementById(id).value = '';
+    });
+    renderAll();
+    showToast('筛选已重置');
+}
+
+// ======================== LOAD DATA FROM BACKEND ========================
+function escText(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderDiffAreas(list) {
+    var card = document.getElementById('diffCard');
+    if (!card) return;
+    if (!list || !list.length) { card.style.display = 'none'; return; }
+    document.getElementById('diffList').innerHTML = list.map(function(t){
+        return '<div class="dq-item">' + escText(t) + '</div>';
+    }).join('');
+    card.style.display = '';
+}
+
+// 数据统一来自本平台后端（数据中台真实拉取结果），不再依赖前端 SheetJS 解析。
+function applyDataset(payload) {
+    // 后端统一信封为 {ok:true, data:{...}}，同时兼容直接传入内层数据
+    var ds = (payload && payload.data) ? payload.data : (payload || {});
+    var rows = ds.rows ? ds.rows : [];
+    if (!rows.length) {
+        showToast('后端暂无数据，请先在数据拉取页获取数据');
+        return false;
+    }
+    allData = normalizeData(rows);
+    savedRawData = rows;
+    hasImported = true;
+    detailPage = 1;
+    initFilters();
+    renderAll();
+    renderDetail();
+    RAW_META = ds;
+    if (ds.diffAreas && ds.diffAreas.length) renderDiffAreas(ds.diffAreas);
+    document.getElementById('updateTime').textContent =
+        '更新时间：' + new Date().toLocaleString('zh-CN')
+        + (ds.chineseName ? ' · 数据表：' + ds.chineseName : '');
+    return true;
+}
+
+function loadFromBackend(silent) {
+    return fetch('/api/bi/dataset')
+        .then(function(r) { return r.json(); })
+        .then(function(payload) {
+            var ok = applyDataset(payload);
+            var inner = (payload && payload.data) ? payload.data : (payload || {});
+            var n = inner.returnedRows || (inner.rows || []).length;
+            if (ok && !silent) showToast('已加载平台最新数据（' + n + ' 条）', 3000);
+            if (!ok && !silent) showToast('平台暂无数据，请先在数据拉取页获取数据', 4000);
+            return ok;
+        })
+        .catch(function(e) {
+            console.error(e);
+            if (!silent) showToast('加载平台数据失败：' + e.message, 4000);
+            return false;
+        });
+}
+
+
+// ======================== DETAIL TABLE ========================
+var detailPage = 1;
+var detailPageSize = 50;
+
+function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderDetail() {
+    var rows = savedRawData || [];
+    // 收集所有行的列名并集（保持出现顺序），兼容各行字段不一致的情况
+    var cols = [];
+    var seen = {};
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i] || {};
+        var keys = Object.keys(r);
+        for (var j = 0; j < keys.length; j++) {
+            if (!seen[keys[j]]) { seen[keys[j]] = 1; cols.push(keys[j]); }
+        }
+    }
+
+    var total = rows.length;
+    var maxPage = Math.max(1, Math.ceil(total / detailPageSize));
+    if (detailPage > maxPage) detailPage = maxPage;
+    if (detailPage < 1) detailPage = 1;
+
+    document.getElementById('detailCount').textContent = '共 ' + total + ' 条 · 悬浮单元格可查看完整文本';
+    document.getElementById('detailPageInfo').textContent = '第 ' + detailPage + ' / ' + maxPage + ' 页';
+    document.getElementById('detailPrev').disabled = detailPage <= 1;
+    document.getElementById('detailNext').disabled = detailPage >= maxPage;
+
+    // 表头
+    var head = '<tr><th style="min-width:44px">#</th>';
+    for (var c = 0; c < cols.length; c++) head += '<th>' + escHtml(cols[c]) + '</th>';
+    head += '</tr>';
+
+    // 当前页行
+    var start = (detailPage - 1) * detailPageSize;
+    var slice = rows.slice(start, start + detailPageSize);
+    var body = '';
+    if (slice.length === 0) {
+        body = '<tr><td colspan="' + (cols.length + 1) + '" style="text-align:center;padding:36px;color:#aaa;white-space:normal">暂无源数据，请点击右上角"重新加载平台数据"</td></tr>';
+    }
+    for (var i2 = 0; i2 < slice.length; i2++) {
+        var row = slice[i2] || {};
+        body += '<tr>';
+        body += '<td class="idx">' + (start + i2 + 1) + '</td>';
+        for (var c2 = 0; c2 < cols.length; c2++) {
+            var v = row[cols[c2]];
+            if (v === null || v === undefined) v = '';
+            var s = String(v);
+            if (s === '\\' || s === '-') s = ''; // 源表中的占位符显示为空
+            body += '<td title="' + escHtml(s) + '">' + escHtml(s) + '</td>';
+        }
+        body += '</tr>';
+    }
+
+    document.getElementById('detailTable').innerHTML = '<thead>' + head + '</thead><tbody>' + body + '</tbody>';
+}
+
+function pageDetail(dir) {
+    detailPage += dir;
+    renderDetail();
+}
+
+// ======================== CLEAR ========================
+function clearData() {
+    if (!confirm('确定要清空当前全部数据吗？\n\n清空后：\n· 看板所有指标、图表与明细将归零\n· 可点击"保存数据"把空数据写入 HTML 文件\n· 也可点击"重新加载平台数据"再次载入\n\n（此操作不可撤销，点击"取消"返回）')) return;
+    try {
+        // 1. 清空数据源
+        allData = [];
+        savedRawData = [];
+        hasImported = true;      // 允许直接把"空数据"保存进文件
+        COL_MAP = {};
+
+        // 2. 重置筛选条件与下拉选项
+        ['filterRegion','filterDept','filterStatus','filterStart','filterEnd'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        initFilters();
+
+        // 3. 清空图表实例并重绘（全部归零）
+        Object.keys(charts).forEach(function(cid) {
+            try { if (charts[cid]) charts[cid].dispose(); } catch (e) {}
+        });
+        charts = {};
+        document.querySelectorAll('.chart-box').forEach(function(el) { el.innerHTML = ''; });
+
+        renderAll();
+        renderDetail();
+
+        document.getElementById('dataCount').textContent = '数据量：0 条';
+        document.getElementById('updateTime').textContent = '更新时间：' + new Date().toLocaleString('zh-CN');
+        showToast('数据已清空，可点击"重新加载平台数据"再次载入');
+    } catch (err) {
+        console.error(err);
+        showToast('清空失败：' + err.message);
+    }
+}
+
+// ======================== SAVE ========================
+function saveData() {
+    if (!hasImported) {
+        showToast('当前没有数据可保存，请先重新加载平台数据');
+        return;
+    }
+    try {
+        // 1. 清除筛选条件，避免把筛选状态写入保存的文件
+        ['filterRegion','filterDept','filterStatus','filterStart','filterEnd'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+        // 2. 销毁图表实例并清空图表容器，确保导出的 HTML 干净可复用
+        Object.keys(charts).forEach(function(cid) {
+            try { if (charts[cid]) charts[cid].dispose(); } catch (e) {}
+        });
+        charts = {};
+        document.querySelectorAll('.chart-box').forEach(function(el) { el.innerHTML = ''; });
+
+        // 3. 用最新数据替换 HTML 源码中的 RAW_DATA 区域
+        var jsonStr = JSON.stringify(savedRawData);
+        jsonStr = jsonStr.replace(/<\//g, '<\\/'); // 防止数据含结束标签字符破坏文件
+
+        hideToast(); // 保存前复位提示条，避免把 show 状态写进文件
+        var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        var startMarker = 'var RAW_DATA = ';
+        var endMarker = '// ======================== COLUMN MAPPING ========================';
+        var startIdx = html.indexOf(startMarker);
+        var endIdx = html.indexOf(endMarker);
+        if (startIdx < 0 || endIdx < 0) {
+            renderAll();
+            showToast('保存失败：未能定位数据区域');
+            return;
+        }
+        var newHtml = html.slice(0, startIdx) + 'var RAW_DATA = ' + jsonStr + ';\n\n' + html.slice(endIdx);
+
+        // 4. 恢复当前页面图表显示
+        renderAll();
+
+        // 5. 写出文件：优先使用系统保存对话框（可直接覆盖原文件），否则自动下载新文件
+        var fileName = getCurrentFileName();
+        if (window.showSaveFilePicker) {
+            window.showSaveFilePicker({
+                suggestedName: fileName,
+                types: [{ description: 'HTML 文件', accept: { 'text/html': ['.html', '.htm'] } }]
+            }).then(function(handle) {
+                return handle.createWritable().then(function(w) {
+                    return w.write(new Blob([newHtml], { type: 'text/html;charset=utf-8' })).then(function() {
+                        return w.close();
+                    });
+                });
+            }).then(function() {
+                showToast('保存成功！下次打开即为最新数据');
+            }).catch(function(err) {
+                if (err && err.name === 'AbortError') return; // 用户取消选择，不处理
+                downloadHtml(newHtml, fileName);
+            });
+        } else {
+            downloadHtml(newHtml, fileName);
+        }
+    } catch (err) {
+        console.error(err);
+        try { renderAll(); } catch (e) {}
+        showToast('保存失败：' + err.message);
+    }
+}
+
+function getCurrentFileName() {
+    var name = '';
+    try {
+        var p = decodeURIComponent(window.location.pathname || '');
+        p = p.split('/').pop() || '';
+        if (/\.html?$/i.test(p)) name = p;
+    } catch (e) {}
+    return name || '服务需求BI看板.html';
+}
+
+function downloadHtml(content, fileName) {
+    var blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 3000);
+    showToast('已生成文件：' + fileName + '（用它覆盖原 HTML 即可）');
+}
+
+// ======================== TOAST ========================
+var toastTimer = null;
+function showToast(msg, duration) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    var dur = duration || 3000;
+    t.textContent = msg;
+    t.classList.add('show');
+    toastTimer = setTimeout(function() {
+        t.classList.remove('show');
+        t.textContent = '';
+        toastTimer = null;
+    }, dur);
+}
+function hideToast() {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    t.classList.remove('show');
+    t.textContent = '';
+}
+
+// ======================== 关键指标解读与数据诊断 ========================
+var REGION_PROV = {
+    '华北': ['北京','天津','河北','山西','内蒙古','内蒙古自治区'],
+    '华东': ['上海','江苏','浙江','安徽','福建','江西','山东'],
+    '华南': ['广东','广西','海南'],
+    '华中': ['河南','湖北','湖南'],
+    '西南': ['重庆','四川','贵州','云南','西藏'],
+    '西北': ['陕西','甘肃','青海','宁夏','新疆'],
+    '东北': ['辽宁','吉林','黑龙江']
+};
+
+function gradeSat(v, n) {
+    if (!n) return 'gray';
+    if (v >= 3.5) return 'g';
+    if (v >= 2.5) return 'y';
+    return 'r';
+}
+function gradeRate(v, good) {
+    if (good) { if (v >= 70) return 'g'; if (v >= 50) return 'y'; return 'r'; }
+    if (v <= 30) return 'g'; if (v <= 50) return 'y'; return 'r';
+}
+function dgClass(c) { return c === 'g' ? 'g' : (c === 'y' ? 'y' : 'r'); }
+
+// 四维健康分（0-100，越高越好）：响应率 +(100-上升率) + 满意度归一 + 归档率，等权平均
+function healthScore(s) {
+    return (s.respRate + (100 - s.escRate) + (s.satSum / (s.satCnt || 1)) / 5 * 100 + s.archRate) / 4;
+}
+function healthLabel(h) {
+    if (h >= 58) return { c: 'g', t: '健康' };
+    if (h >= 45) return { c: 'y', t: '关注' };
+    return { c: 'r', t: '预警' };
+}
+
+function toggleInsight() {
+    var b = document.getElementById('insBody');
+    var o = b.style.display !== 'none';
+    b.style.display = o ? 'none' : '';
+}
+
+function renderInsight() {
+    var data = getFilteredData();
+    var n = data.length;
+
+    document.getElementById('insScope').textContent =
+        '统计范围：当前筛选后 ' + n + ' 条 / 全量 ' + allData.length + ' 条 · 结论随筛选实时刷新';
+
+    if (!n) {
+        document.getElementById('quickRow').innerHTML = '';
+        document.getElementById('diagTable').innerHTML = '';
+        document.getElementById('diagNote').textContent = '';
+        document.getElementById('dqList').innerHTML = '';
+        document.getElementById('insFoot').textContent = '';
+        return;
+    }
+
+    // ---------- 基础指标 ----------
+    var responded = data.filter(function(d){ return d.responded === '是'; }).length;
+    var respRate = responded / n * 100;
+    var escalated = data.filter(function(d){ return d.escalated === '是'; }).length;
+    var escRate = escalated / n * 100;
+    var archived = data.filter(function(d){ return d.archived === '是'; }).length;
+    var archRate = archived / n * 100;
+
+    var satArr = data.filter(function(d){ return d.satisfaction !== null && d.satisfaction !== undefined; });
+    var avgSat = satArr.length ? satArr.reduce(function(a,b){ return a + b.satisfaction; }, 0) / satArr.length : 0;
+    var lowSat = satArr.filter(function(d){ return d.satisfaction <= 2; }).length;
+    var lowSatRate = satArr.length ? lowSat / satArr.length * 100 : 0;
+    var highSat = satArr.filter(function(d){ return d.satisfaction >= 4; }).length;
+    var highSatRate = satArr.length ? highSat / satArr.length * 100 : 0;
+
+    var byStatus = {};
+    ['完全解决','临时解决','待解决','无法解决'].forEach(function(s){
+        byStatus[s] = data.filter(function(d){ return d.status === s; }).length;
+    });
+    var solvedRate = byStatus['完全解决'] / n * 100;
+    var unableRate = byStatus['无法解决'] / n * 100;
+
+    // ---------- 四张速读卡 ----------
+    var qc = [
+        { lv: avgSat < 2.5 ? 'lv1' : (avgSat < 3.5 ? 'lv2' : 'lv3'),
+          name: '客户满意度', val: avgSat.toFixed(2), unit: '/ 5.0',
+          tag: avgSat < 2.5 ? '<span class="tag red">严重偏低</span>' : (avgSat < 3.5 ? '<span class="tag orange">未达标</span>' : '<span class="tag green">达标</span>'),
+          body: '低分（≤2分）<b>' + lowSat + '</b> 条占 <b>' + lowSatRate.toFixed(1) + '%</b>，高分（≥4分）仅 <i>' + highSatRate.toFixed(1) + '%</i>。达标线 3.5 分，缺口 <b>' + (3.5 - avgSat).toFixed(2) + '</b> 分。' },
+        { lv: respRate < 50 ? 'lv1' : (respRate < 70 ? 'lv2' : 'lv3'),
+          name: '需求响应率', val: respRate.toFixed(1), unit: '%',
+          tag: respRate < 50 ? '<span class="tag red">严重偏低</span>' : (respRate < 70 ? '<span class="tag orange">未达标</span>' : '<span class="tag green">达标</span>'),
+          body: '未响应 <b>' + (n - responded) + '</b> 条，达标线 70%。响应率与上升率呈明显反向：响应越低的部门上升越集中。' },
+        { lv: escRate > 50 ? 'lv1' : (escRate > 40 ? 'lv2' : 'lv3'),
+          name: '需求上升率', val: escRate.toFixed(1), unit: '%',
+          tag: escRate > 50 ? '<span class="tag red">严重偏高</span>' : (escRate > 40 ? '<span class="tag orange">未达标</span>' : '<span class="tag green">达标</span>'),
+          body: '上升 <b>' + escalated + '</b> 条。上升是结果不是原因，需回到「未响应 / 超时 / 跨部门」三类触发源做源头治理。' },
+        { lv: solvedRate < 40 ? 'lv1' : (solvedRate < 60 ? 'lv2' : 'lv3'),
+          name: '彻底闭环率', val: solvedRate.toFixed(1), unit: '%',
+          tag: solvedRate < 40 ? '<span class="tag red">偏低</span>' : '<span class="tag orange">未达标</span>',
+          body: '完全解决 <b>' + byStatus['完全解决'] + '</b> 条，临时解决 <b>' + byStatus['临时解决'] + '</b> 条待转终局，无法解决 <b>' + byStatus['无法解决'] + '</b> 条（' + unableRate.toFixed(1) + '%）。' }
+    ];
+    document.getElementById('quickRow').innerHTML = qc.map(function(q){
+        return '<div class="ins-card qc ' + q.lv + '">' +
+            '<div class="qn">' + q.name + q.tag + '</div>' +
+            '<div class="qv">' + q.val + '<small>' + q.unit + '</small></div>' +
+            '<div class="qb">' + q.body + '</div></div>';
+    }).join('');
+
+    // ---------- 分维度诊断矩阵 ----------
+    function diagRows(title, key) {
+        var st = statBy(data, key);
+        var keys = Object.keys(st).sort(function(a, b){ return st[b].n - st[a].n; });
+        var rows = '<tr class="sub-hd"><td colspan="10">' + title + '</td></tr>';
+        rows += '<tr><th>对象</th><th>数量</th><th>占比</th><th>响应率</th><th>上升率</th><th>平均满意度</th><th>归档率</th><th>完全解决率</th><th>无法解决率</th><th>综合评级</th></tr>';
+        keys.forEach(function(k){
+            var s = st[k];
+            var avg = s.satSum / (s.satCnt || 1);
+            var hl = healthLabel(healthScore(s));
+            rows += '<tr>' +
+                '<td class="name">' + escHtml(k) + '</td>' +
+                '<td>' + s.n + '</td>' +
+                '<td>' + (s.n / n * 100).toFixed(1) + '%</td>' +
+                '<td><span class="dg ' + dgClass(gradeRate(s.respRate, true)) + '">' + s.respRate.toFixed(0) + '%</span></td>' +
+                '<td><span class="dg ' + dgClass(gradeRate(s.escRate, false)) + '">' + s.escRate.toFixed(0) + '%</span></td>' +
+                '<td><span class="dg ' + dgClass(gradeSat(avg, s.satCnt)) + '">' + (s.satCnt ? avg.toFixed(2) : '-') + '</span></td>' +
+                '<td><span class="dg ' + dgClass(gradeRate(s.archRate, true)) + '">' + s.archRate.toFixed(0) + '%</span></td>' +
+                '<td>' + s.solvedRate.toFixed(0) + '%</td>' +
+                '<td>' + s.unableRate.toFixed(0) + '%</td>' +
+                '<td><span class="dg ' + hl.c + '">' + hl.t + ' ' + healthScore(s).toFixed(0) + '</span></td>' +
+                '</tr>';
+        });
+        return rows;
+    }
+    document.getElementById('diagTable').innerHTML =
+        diagRows('按解决部门', 'dept') +
+        diagRows('按二级分类', 'cat2') +
+        diagRows('按反馈来源', 'source') +
+        diagRows('按智汇实验室分类', 'lab') +
+        diagRows('按大区', 'region');
+
+    document.getElementById('diagNote').innerHTML =
+        '单项色阶：响应率 ≥70% 绿 / 50–69% 黄 / &lt;50% 红；上升率 ≤30% 绿 / 31–50% 黄 / &gt;50% 红；满意度 ≥3.5 绿 / 2.5–3.49 黄 / &lt;2.5 红；归档率 ≥70% 绿 / 50–69% 黄 / &lt;50% 红。' +
+        '<b>综合评级</b>取四维健康分 =（响应率 + (100−上升率) + 满意度归一 + 归档率）÷ 4：≥58 健康 / 45–57 关注 / &lt;45 预警。' +
+        '<b>注意：单维度样本量小于 10 条的对象，比例类指标波动大，只看趋势不做考核。</b>';
+
+    // ---------- 数据质量 ----------
+    var dq = [];
+    var contra = data.filter(function(d){ return d.responded === '否' && d.escalated === '是'; }).length;
+    var provList = countBy(data, function(d){ return d.province; });
+    var contraTotal = contra;
+    var badRegion = 0;
+    data.forEach(function(d){
+        var list = REGION_PROV[d.region];
+        if (list && d.province && list.indexOf(d.province) < 0) badRegion++;
+    });
+    if (badRegion) {
+        dq.push({ c: 'bad', k: '字段冲突', t: '<b>' + badRegion + '</b> 条记录的「省份」与「大区」不匹配（如内蒙古自治区归入东北），会导致区域分析失真，需在导入端做字典校验。' });
+    }
+    var provNameList = provList.map(function(x){ return x[0]; });
+    var dupProv = provNameList.filter(function(p){
+        var base = p.replace('自治区','').replace('省','').replace('市','');
+        if (base.length < 2) return false;
+        return provNameList.some(function(p2){
+            if (p2 === p) return false;
+            var b2 = p2.replace('自治区','').replace('省','').replace('市','');
+            return base === b2 && p !== p2;
+        });
+    });
+    if (dupProv.length) {
+        dq.push({ c: 'bad', k: '命名不统一', t: '省份存在重复写法（<b>' + dupProv.join('</b> / <b>') + '</b>），统计时被拆成两类（如「内蒙古」与「内蒙古自治区」），建议统一命名标准。' });
+    }
+    dq.push({ c: contraTotal ? 'bad' : 'ok', k: '逻辑自洽', t: contraTotal
+        ? '「未响应却已上升」<b>' + contraTotal + '</b> 条（' + (contraTotal / n * 100).toFixed(1) + '%），业务上不成立，说明「是否响应」未被真实执行，该指标当前不可直接用于考核。'
+        : '未发现「未响应却已上升」的逻辑矛盾记录，字段一致性良好。' });
+    var noReason = data.filter(function(d){ return d.status === '无法解决' && !d.reason; }).length;
+    var unableReasons = {};
+    var unableCnt = data.filter(function(d){ return d.status === '无法解决'; }).length;
+    data.filter(function(d){ return d.status === '无法解决' && d.reason; }).forEach(function(d){
+        unableReasons[d.reason] = (unableReasons[d.reason] || 0) + 1;
+    });
+    var topReason = Object.keys(unableReasons).sort(function(a,b){ return unableReasons[b] - unableReasons[a]; })[0];
+    var topReasonRate = (topReason && noReason === 0 && unableCnt) ? unableReasons[topReason] / unableCnt * 100 : 0;
+    dq.push({ c: noReason ? 'bad' : (topReasonRate >= 80 ? 'bad' : 'ok'), k: '归因完整', t: noReason
+        ? '<b>' + noReason + '</b> 条「无法解决」未填写原因，无法做归因分析。'
+        : (topReasonRate >= 80
+            ? '「无法解决」的归因<b>过度集中</b>：' + Math.round(topReasonRate) + '% 都填同一个原因（<b>' + escHtml(topReason) + '</b>），属于兜底话术而非真实归因，无法支撑「超范围需求」的业务决策。'
+            : '所有「无法解决」件均已填写原因，归因分布相对合理。') });
+    var noSat = data.filter(function(d){ return d.satisfaction === null || d.satisfaction === undefined; }).length;
+    dq.push({ c: noSat ? 'bad' : 'ok', k: '满意度回收', t: noSat
+        ? '<b>' + noSat + '</b> 条未回收满意度评分，样本代表性不足。'
+        : '满意度评分覆盖率 <i>100%</i>，样本代表性良好（' + satArr.length + '/' + n + '）。' });
+    var noDue = data.filter(function(d){ return d.status === '待解决' && !d.estDate; }).length;
+    dq.push({ c: noDue ? 'bad' : 'ok', k: '时效管理', t: noDue
+        ? '<b>' + noDue + '</b> 条「待解决」未填预计解决日期，无法跟踪时效风险。'
+        : '「待解决」件均已填写预计解决日期，具备时效跟踪基础。' });
+
+    document.getElementById('dqList').innerHTML = dq.map(function(x){
+        return '<div class="dq ' + x.c + '"><span class="dk">' + x.k + '</span><span>' + x.t + '</span></div>';
+    }).join('');
+
+    document.getElementById('insFoot').innerHTML =
+        '<b>口径说明：</b>响应率 =「是否响应=是」占比；上升率 =「是否上升=是」占比；闭环率 =「问题状态=完全解决」占比；' +
+        '满意度为 0–5 分整数均分。低分 ≤2 分，高分 ≥4 分。所有比例均基于当前筛选后的 ' + n + ' 条记录计算，随筛选条件实时变化。<br>' +
+        '<b>使用提醒：</b>本页样本量 ' + n + ' 条，属中小样本，单月波动受个别大客户影响明显，<b>建议按季度看趋势、单条数据只做复盘不做考核</b>。';
+}
+
+// 维度统计工具
+function statBy(data, key) {
+    var map = {};
+    data.forEach(function(d){
+        var k = d[key] || '(空)';
+        if (!map[k]) map[k] = { n: 0, resp: 0, esc: 0, satSum: 0, satCnt: 0, arch: 0, solved: 0, unable: 0 };
+        var s = map[k];
+        s.n++;
+        if (d.responded === '是') s.resp++;
+        if (d.escalated === '是') s.esc++;
+        if (d.archived === '是') s.arch++;
+        if (d.status === '完全解决') s.solved++;
+        if (d.status === '无法解决') s.unable++;
+        if (d.satisfaction !== null && d.satisfaction !== undefined) { s.satSum += d.satisfaction; s.satCnt++; }
+    });
+    Object.keys(map).forEach(function(k){
+        var s = map[k];
+        s.respRate = s.resp / s.n * 100;
+        s.escRate = s.esc / s.n * 100;
+        s.archRate = s.arch / s.n * 100;
+        s.solvedRate = s.solved / s.n * 100;
+        s.unableRate = s.unable / s.n * 100;
+    });
+    return map;
+}
+
+// ======================== INIT ========================
+window.addEventListener('load', function() {
+    hideToast(); // 复位可能残留的提示条状态
+    // 被 iframe 嵌入平台页面时，隐藏自带工具条（外层已有同功能按钮），避免重复
+    try {
+        if (window.self !== window.top) {
+            var hr = document.querySelector('.header-right');
+            if (hr) {
+                var acts = hr.querySelectorAll('button, a.save-btn');
+                for (var i = 0; i < acts.length; i++) acts[i].style.display = 'none';
+            }
+        }
+    } catch (e) { /* 跨域限制时忽略 */ }
+    // 优先使用下载版 HTML 内嵌的数据；否则回源后端拉取平台最新数据
+    if (RAW_DATA && RAW_DATA.length) {
+        applyDataset({ rows: RAW_DATA, returnedRows: RAW_DATA.length,
+            chineseName: (RAW_META && RAW_META.chineseName) || '',
+            diffAreas: RAW_META && RAW_META.diffAreas,
+            columns: RAW_META && RAW_META.columns });
+    } else {
+        allData = normalizeData([]);
+        initFilters();
+        renderAll();
+        renderDetail();
+        loadFromBackend(true);
+    }
+    document.getElementById('updateTime').textContent = '更新时间：' + new Date().toLocaleString('zh-CN');
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    var t = document.getElementById('toast');
+    if (t) t.addEventListener('click', hideToast);
+});
+
+window.addEventListener('resize', function() {
+    Object.keys(charts).forEach(function(id) {
+        if (charts[id]) charts[id].resize();
+    });
+});
+</script>
+

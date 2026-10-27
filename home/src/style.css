@@ -297,6 +297,7 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .module-card.tone-orange { --tone: #ff9500; }
 .module-card.tone-green { --tone: #34c759; }
 .module-card.tone-purple { --tone: #af52de; }
+.module-card.tone-teal { --tone: #0aa2a2; }
 
 /* 首页按工作模块分区域展示 */
 .regions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 34px; }
@@ -316,6 +317,7 @@ h1 { margin: 0; color: var(--ink); font-size: clamp(40px, 6vw, 60px); font-weigh
 .module-icon.tone-orange { background: linear-gradient(145deg, #ffb340, #ff9500); }
 .module-icon.tone-green { background: linear-gradient(145deg, #63d781, #34c759); }
 .module-icon.tone-purple { background: linear-gradient(145deg, #c07aec, #af52de); }
+.module-icon.tone-teal { background: linear-gradient(145deg, #41c4c4, #0aa2a2); }
 .module-code { display: none; }
 .module-card strong { margin: 0 0 8px; color: var(--ink); font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
 .module-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }

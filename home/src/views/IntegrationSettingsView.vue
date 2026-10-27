@@ -12,7 +12,7 @@ import {
   type DingtalkCollectorStatus,
 } from '../api/integrations'
 import { resolveDingTalkUserId } from '../api/messages'
-import { loginSalesforce } from '../api/integrations'
+import { loginOa, loginSalesforce } from '../api/integrations'
 
 const router = useRouter()
 
@@ -110,6 +110,9 @@ const form = reactive({
     todo_path: '',
     todo_query_params: '',
     rows_path: '',
+    parser: 'json',
+    xml_path: '',
+    page_id: '',
     field_map: '',
     default_title: 'OA 待办',
     timeout_seconds: 10,
@@ -174,6 +177,9 @@ function flagOf(source: string): IntegrationSourceFlag | undefined {
 
 const mobileInput = ref('')
 const useridLooking = ref(false)
+const oaLogging = ref(false)
+const oaLoginMessage = ref('')
+const oaLoginError = ref('')
 const sfLogging = ref(false)
 const sfLoginMessage = ref('')
 const sfLoginError = ref('')
@@ -262,6 +268,9 @@ function applyConfig(config: IntegrationConfig) {
   form.oa.todo_path = config.oa.todo_path ?? ''
   form.oa.todo_query_params = config.oa.todo_query_params ?? ''
   form.oa.rows_path = config.oa.rows_path ?? ''
+  form.oa.parser = config.oa.parser || 'json'
+  form.oa.xml_path = config.oa.xml_path ?? ''
+  form.oa.page_id = config.oa.page_id ?? ''
   form.oa.field_map = config.oa.field_map ?? ''
   form.oa.default_title = config.oa.default_title || 'OA 待办'
   form.oa.timeout_seconds = config.oa.timeout_seconds ?? 10
@@ -313,6 +322,37 @@ async function handleSave() {
     console.error(error)
   } finally {
     saving.value = false
+  }
+}
+
+/** 登录 OA：验证账号密码并保存，之后后端自动登录。OA 不需要动态令牌。 */
+async function handleOaLogin() {
+  oaLogging.value = true
+  oaLoginMessage.value = ''
+  oaLoginError.value = ''
+  try {
+    const result = await loginOa({
+      base_url: form.oa.base_url.trim(),
+      username: form.oa.username.trim(),
+      password: form.oa.password,
+      login_path: form.oa.login_path.trim(),
+      todo_path: form.oa.todo_path.trim(),
+      parser: form.oa.parser,
+      xml_path: form.oa.xml_path.trim(),
+      page_id: form.oa.page_id.trim(),
+    })
+    if (result.ok) {
+      oaLoginMessage.value = result.detail || '登录成功'
+      if (result.config) applyConfig(result.config)
+      if (result.sources) sourceFlags.value = result.sources
+    } else {
+      oaLoginError.value = result.detail || '登录失败'
+    }
+  } catch (error) {
+    oaLoginError.value = '登录请求失败，请确认后端已启动。'
+    console.error(error)
+  } finally {
+    oaLogging.value = false
   }
 }
 
@@ -569,7 +609,7 @@ onMounted(loadSettings)
           <template v-if="form.oa.auth_mode === 'password'">
             <label class="field">
               <span>账号</span>
-              <input v-model="form.oa.username" type="text" placeholder="OA 登录账号" />
+              <input v-model="form.oa.username" type="text" placeholder="OA 账号（通常是工号）" />
             </label>
             <label class="field">
               <span>
@@ -628,16 +668,52 @@ onMounted(loadSettings)
               <input v-model="form.oa.auth_header" type="text" placeholder="如 X-Token，留空则当 Cookie 发送" />
             </label>
           </template>
-          <label class="field field-wide">
-            <span>待办接口路径</span>
-            <input v-model="form.oa.todo_path" type="text" placeholder="如 api/workflow/paService.do" />
-            <small>浏览器登录 OA 后按 F12 抓「我的待办」请求，取其路径</small>
+          <label class="field">
+            <span>数据格式</span>
+            <select v-model="form.oa.parser">
+              <option value="json">JSON（通用接口）</option>
+              <option value="weaver_xml">泛微 e-cology 表格 XML</option>
+            </select>
+            <small v-if="form.oa.parser === 'weaver_xml'">
+              泛微的待办是两步：先取列表页里的 tableString，再调表格接口拿 XML
+            </small>
+            <small v-else>接口直接返回 JSON，按下面的「列表所在路径」取值</small>
           </label>
           <label class="field field-wide">
+            <span>待办接口路径</span>
+            <input
+              v-model="form.oa.todo_path"
+              type="text"
+              :placeholder="form.oa.parser === 'weaver_xml'
+                ? 'workflow/search/WFSearchResult.jsp?resourceid=15824&needHeader=false&viewcondition=0'
+                : '如 api/workflow/paService.do'"
+            />
+            <small v-if="form.oa.parser === 'weaver_xml'">
+              填浏览器里「待办」页的地址（含查询串）。这个页也当 Referer 用，填错会 404
+            </small>
+            <small v-else>浏览器登录 OA 后按 F12 抓「我的待办」请求，取其路径</small>
+          </label>
+          <template v-if="form.oa.parser === 'weaver_xml'">
+            <label class="field field-wide">
+              <span>表格数据接口</span>
+              <input
+                v-model="form.oa.xml_path"
+                type="text"
+                placeholder="weaver/weaver.common.util.taglib.SplitPageXmlServlet"
+              />
+              <small>留空则用默认的 SplitPageXmlServlet</small>
+            </label>
+            <label class="field">
+              <span>pageId</span>
+              <input v-model="form.oa.page_id" type="text" placeholder="Wf:pendingMatters" />
+              <small>待办页对应的 pageId，留空用默认值</small>
+            </label>
+          </template>
+          <label v-else class="field field-wide">
             <span>查询参数</span>
             <input v-model="form.oa.todo_query_params" type="text" placeholder="userId=xxx&pageSize=20" />
           </label>
-          <label class="field">
+          <label v-if="form.oa.parser !== 'weaver_xml'" class="field">
             <span>列表所在路径</span>
             <input v-model="form.oa.rows_path" type="text" placeholder="result.todos" />
           </label>
@@ -658,6 +734,38 @@ onMounted(loadSettings)
           <small v-else-if="!oaFieldMapHasTitle" class="field-error">必须包含 title 字段，否则无法定位待办标题</small>
           <small v-else>至少要有 title；其余字段按实际响应结构填</small>
         </label>
+
+        <div class="field-block">
+          <span class="field-label">登录并保存</span>
+          <p class="config-hint" style="margin: 0 0 10px">
+            填好上面的地址和账号密码，点登录即可 —— OA 只要账号密码，不需要动态令牌。
+            登录成功后账号会存在本机，后端每次拉数据自动登录，不用再手动维护会话。
+          </p>
+          <div class="secret-row">
+            <button
+              type="button"
+              class="primary-button"
+              :disabled="oaLogging"
+              @click="handleOaLogin"
+            >
+              {{ oaLogging ? '登录中…' : '登录并保存' }}
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="oaLogging"
+              @click="handleTest"
+            >
+              测试连接
+            </button>
+          </div>
+          <div v-if="oaLoginMessage" class="test-result ok">
+            <span>✓</span>{{ oaLoginMessage }}
+          </div>
+          <div v-if="oaLoginError" class="test-result fail">
+            <span>✕</span>{{ oaLoginError }}
+          </div>
+        </div>
 
         <div v-if="testResults.oa" class="test-result" :class="testResults.oa.ok ? 'ok' : 'fail'">
           <span>{{ testResults.oa.ok ? '✓' : '✕' }}</span>{{ testResults.oa.detail }}

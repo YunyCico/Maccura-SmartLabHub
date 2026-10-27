@@ -2,7 +2,7 @@
 
 迈克生物集团 · 实验室运营管理部 —— 部门工作平台（钉钉企业内部应用）。
 
-平台外壳为 Vue 3 + FastAPI，「数据分析」「6S标准报告」「Ding听记优化」等工作工具模块。
+平台外壳为 Vue 3 + FastAPI，「数据分析」「服务需求报表」「6S标准报告」「Ding听记优化」等工作工具模块。
 
 ## 目录结构
 
@@ -30,6 +30,11 @@ SmartLabHub/
 │   │       ├── smartlab/       #   library / exports / reports
 │   │       ├── lis/            #   LIS 数据整理：staging / standardized / mappings
 │   │       └── imports/        #   通用导入暂存
+│   ├── service_demand/         # 服务需求报表（已上线，原 DataFetchPortal）
+│   │   ├── backend/            # FastAPI 子应用，包名 service_portal（避免与平台 app 重名）
+│   │   ├── frontend/           # Vue 界面；dist 已入库，服务器不需要装 Node
+│   │   ├── config.json         # 内网账号与 openApiKey，**不入库**（首次在页面里填）
+│   │   └── data/               # 拉取历史与样例，已忽略入库
 │   ├── dingtalk-minutes/       # 钉钉听记内容标准化处理（规划中）
 │   ├── 6s-report/              # 6S 标准化报告（规划中）
 │   └── service-report/         # 服务报告标准化（规划中）

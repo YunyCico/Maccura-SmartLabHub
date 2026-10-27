@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+# ⚠️ 故意**不**忽略 frontend/dist：发布包要带给同事，
+#    服务器上不装 Node，没有 dist 这个模块就打不开。
+#    （和主工程 home/dist 的处理一致）
+
+# 运行产物
+data/run_*/
+data/history.json
+
+# 本地配置（含密码与 Key，不要提交）
+config.json
+
+# 截图
+shots/
