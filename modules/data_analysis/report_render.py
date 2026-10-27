@@ -156,11 +156,37 @@ def kpi(label, value, sub="", color=""):
 
 
 def table(headers, rows, cls=""):
-    """headers: [str]；rows: [[cell_html]]（cell 里可带标签，故不转义）。"""
+    """headers: [str]；rows: [[cell_html]]（cell 里可带标签，故不转义）。
+
+    ★ cell 允许两种写法，两种都正确：
+      ① 只放内容：``"<b>合计</b>"``        → 本函数包上 <td>
+      ② 自带 td ：``"<td class='x'>合计</td>"`` → 原样使用（保留 class 等属性）
+
+    为什么要兼容 ②：历史代码里大量 cell 自己写了 <td>，若本函数再包一层，
+    就会变成 ``<td><td>…</td></td>`` —— 浏览器遇到 td 里的新 td 会**隐式关闭
+    当前单元格**，于是数据行渲染出的单元格数是表头的两倍，表格整片错位
+    （实测「逐日对比」表头 9 列、数据渲染出 18 格）。
+
+    行内单元格数与表头不一致时，渲染前会自动补齐/截断，保证不横向错位。
+    """
     h = "".join("<th>%s</th>" % esc(x) for x in headers)
+    n = len(headers)
     body = []
     for r in rows:
-        body.append("<tr>" + "".join("<td>%s</td>" % c for c in r) + "</tr>")
+        cells = []
+        for c in r:
+            text = str(c).strip()
+            if text.startswith("<td") and text.endswith("</td>"):
+                cells.append(text)                     # 调用方已包好，原样用
+            else:
+                cells.append("<td>%s</td>" % c)
+        if len(cells) != n:
+            # 列数对不上就补齐/截断，宁可丢内容也不能让整张表错位
+            if len(cells) < n:
+                cells.extend(["<td>—</td>"] * (n - len(cells)))
+            else:
+                cells = cells[:n]
+        body.append("<tr>" + "".join(cells) + "</tr>")
     return ('<table class="%s"><tr>%s</tr>%s</table>'
             % (esc(cls), h, "".join(body)))
 

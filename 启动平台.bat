@@ -1,34 +1,26 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul 2>&1
 cd /d "%~dp0"
-
-set "PYTHON_EXE=C:\Users\98319\.workbuddy\binaries\python\envs\smartlabhub\Scripts\python.exe"
+rem Keep pure ASCII + CRLF + thin: non-ASCII becomes mojibake in the
+rem OEM code page. Real logic lives in platform\tools\launch_platform.py.
+rem Python is not hard-coded: probe SLH_PYTHON, py -3, PATH, common dirs.
+set "PYTHON_EXE="
 set "LAUNCHER=%~dp0platform\tools\launch_platform.py"
-
-if not exist "%PYTHON_EXE%" (
-    echo [ERROR] Python runtime not found:
-    echo %PYTHON_EXE%
-    echo.
-    echo Install Python deps or update PYTHON_EXE in this file.
+if defined SLH_PYTHON if exist "%SLH_PYTHON%" set "PYTHON_EXE=%SLH_PYTHON%"
+if not defined PYTHON_EXE for /f "delims=" %%i in ('py -3 -c "import sys;print(sys.executable)" 2^>nul') do if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
+if not defined PYTHON_EXE for /f "delims=" %%i in ('where python 2^>nul') do if not defined PYTHON_EXE (echo %%i|find /i "WindowsApps" >nul||set "PYTHON_EXE=%%i")
+if not defined PYTHON_EXE for /f "delims=" %%i in ('dir /b /ad "%LOCALAPPDATA%\Programs\Python\Python3*" 2^>nul') do if not defined PYTHON_EXE if exist "%LOCALAPPDATA%\Programs\Python\%%i\python.exe" set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\%%i\python.exe"
+if not defined PYTHON_EXE (
+    echo [ERROR] No usable Python interpreter found.
+    echo   1^) Install Python 3.11+ from https://www.python.org/downloads/
+    echo   2^) Tick "Add python.exe to PATH" during install
+    echo   3^) Run this file again
+    echo   Or: set SLH_PYTHON=C:/path/to/python.exe
     pause
     exit /b 2
 )
-
-if not exist "%LAUNCHER%" (
-    echo [ERROR] Launcher script not found:
-    echo %LAUNCHER%
-    pause
-    exit /b 2
-)
-
 "%PYTHON_EXE%" "%LAUNCHER%" %*
 set "RC=%ERRORLEVEL%"
-
-if not "%RC%"=="0" (
-    echo.
-    echo [FAILED] Exit code %RC%. See logs in the "logs" folder.
-    pause
-)
-
+if not "%RC%"=="0" (echo.&echo [FAILED] Exit code %RC%. See logs in "logs".&pause)
 exit /b %RC%

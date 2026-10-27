@@ -19,16 +19,24 @@
         <div class="borg">实验室运营管理部</div>
       </div>
     </div>
-    <nav class="nav">
-      <a data-page="home" class="active"><i>▤</i>概览</a>
-      <a data-page="sources"><i>▣</i>数据源管理</a>
-      <a data-page="fields"><i>≣</i>字段字典</a>
-      <a data-page="build"><i>∑</i>汇总提取</a>
-      <a data-page="analysis"><i>◔</i>数据分析</a>
-      <a data-action="lis-organizer"><i>▦</i>LIS 数据整理</a>
-      <a data-page="ai"><i>✦</i>AI 助手</a>
-      <a data-page="settings"><i>⚙</i>设置</a>
-      <a class="navhelp" href="./help.html" target="_blank" rel="noopener"><i>❓</i>使用说明</a>
+    <div class="navhead">
+      <button class="nav-sortbtn" id="nav-sort-start" title="自定义左侧菜单的顺序，拖完点「完成」即可">☰ 自定义顺序</button>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-sortbar" id="nav-sortbar">
+        <span class="nsb-tip">拖动条目调整顺序</span>
+        <button class="btn tiny" id="nav-sort-done">完成</button>
+        <button class="btn tiny" id="nav-sort-reset">恢复默认</button>
+      </div>
+      <a data-page="home" class="active" data-key="home"><i>▤</i>概览</a>
+      <a data-page="sources" data-key="sources"><i>▣</i>数据源管理</a>
+      <a data-page="fields" data-key="fields"><i>≣</i>字段字典</a>
+      <a data-page="build" data-key="build"><i>∑</i>汇总提取</a>
+      <a data-page="analysis" data-key="analysis"><i>◔</i>数据分析</a>
+      <a data-action="lis-organizer" data-key="lis"><i>▦</i>LIS 数据整理</a>
+      <a data-page="ai" data-key="ai"><i>✦</i>AI 助手</a>
+      <a data-page="settings" data-key="settings"><i>⚙</i>设置</a>
+      <a class="navhelp" href="./help.html" target="_blank" rel="noopener" data-key="help"><i>❓</i>使用说明</a>
     </nav>
     <div class="sidefoot">
       <div class="stat-mini"><span id="sf-ds">0</span> 张数据表</div>
@@ -52,6 +60,7 @@
             <button class="btn small" id="tat-ds-none">清空</button>
           </div>
         </div>
+        <div class="reqbox" id="tat-req"></div>
         <div class="picklist" id="tat-ds-list" style="max-height:220px"></div>
         <div class="actions">
           <button class="btn primary" id="tat-ds-run">生成 TAT 数据</button>
@@ -60,22 +69,21 @@
         <div class="toolbar">
           <div class="tl">TAT 参数</div>
           <div class="tr">
-            <span class="seg" id="tat-presets">
-              <button class="btn small" data-pre="cj">采集-签收</button>
-              <button class="btn small" data-pre="qs">签收-核收</button>
-              <button class="btn small" data-pre="hbg">核收-报告</button>
-              <button class="btn small" data-pre="bgsh">报告-审核</button>
-            </span>
-            <select id="tat-start" class="sel" title="开始时间列"></select>
-            <span class="tip">→</span>
-            <select id="tat-end" class="sel" title="结束时间列"></select>
+            <span class="tip">本次计算用到的字段</span>
+            <span id="tat-fields" class="tat-fields">—</span>
+            <button class="btn small" id="tat-adjust" title="手工指定各环节用哪一列">调整字段</button>
             <select id="tat-group" class="sel" title="分组列（可选）"></select>
+            <button class="btn small" id="tat-std" title="设置实验室 TAT 标准：按专业与平诊/急诊">TAT 标准</button>
             <button class="btn small primary" id="tat-run">计算</button>
-            <button class="btn small" id="tat-export" title="把本次 TAT 结果（KPI / 分布 / 分组）导出为 CSV">导出</button>
+            <button class="btn small" id="tat-export" title="把本次 TAT / ToTAT 结果（KPI / 分布 / 分组）导出为 CSV">导出</button>
             <button class="btn small danger" id="tat-clear">清除</button>
           </div>
         </div>
-        <div class="tip" id="tat-tip" style="margin:0 0 10px">周转时间 = 结束时间 − 开始时间；用于查看检测流程各环节耗时分布。</div>
+        <div class="tat-adjust" id="tat-adjust-panel" style="display:none">
+          <div class="tip">各环节用哪一列（留空表示该环节算不了，会在结果里注明）：</div>
+          <div class="tat-adjust-grid" id="tat-adjust-grid"></div>
+        </div>
+        <div class="tip" id="tat-tip" style="margin:0 0 10px">TAT = 审核时间 − 签收时间；ToTAT = 审核时间 − 采样时间（无采样则取采集时间）。</div>
         <div id="tat-body"></div>
       </div>
     </section>
@@ -401,6 +409,7 @@
             <button class="btn small" id="rp-ds-none">清空</button>
           </div>
         </div>
+        <div class="reqbox" id="rp-req"></div>
         <div class="picklist" id="rp-ds-list" style="max-height:220px"></div>
         <div class="actions">
           <button class="btn primary" id="rp-ds-run">生成设备负载数据</button>
@@ -539,6 +548,35 @@
 
 <div class="toast" id="toast"></div>
 <div class="modal" id="modal"><div class="modal-box"><div class="modal-head"><span id="modal-title"></span><button id="modal-close">✕</button></div><div class="modal-body" id="modal-body"></div></div></div>
+
+<div class="modal" id="tat-std-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>实验室 TAT 标准</span>
+      <button id="tat-std-x">✕</button>
+    </div>
+    <div class="modal-body" id="tat-std-body">
+      <p class="tip">按专业与就诊类型分别设定 TAT 规定（小时）。留空表示该档不判定。
+        设好之后，TAT 分析结果会按「专业 × 平诊/急诊」统计超标数与超标率。</p>
+      <table class="grid tat-std-tbl">
+        <thead><tr><th>专业</th><th>平诊 TAT 规定</th><th>急诊 TAT 规定</th></tr></thead>
+        <tbody id="tat-std-rows"></tbody>
+      </table>
+      <div class="tat-std-target">
+        <span class="tip">判定对象</span>
+        <select id="tat-std-target" class="sel">
+          <option value="lab_tat">实验室内 TAT（签收 → 审核）</option>
+          <option value="tot">ToTAT（采样 → 审核，含前段运输）</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="tat-std-save">保存标准</button>
+        <button class="btn ghost" id="tat-std-default">恢复默认</button>
+        <span class="tip" id="tat-std-tip"></span>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="modal" id="psdlg">
   <div class="modal-box wide">

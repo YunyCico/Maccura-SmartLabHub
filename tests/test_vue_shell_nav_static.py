@@ -68,3 +68,16 @@ def test_lis_close_message_contract_still_present():
     assert "smartlabhub:navigate" in vue
     assert "smartlabhub:close-lis-organizer" in vue
     assert "event.source !== embedFrame.value?.contentWindow" in vue, "必须校验消息来源 iframe"
+
+
+def test_lis_sheet_picker_reloads_source_on_change():
+    """切换工作表必须重新读取源表。
+
+    回归背景：工作表下拉框原本只有 v-model、没有 @change。
+    用户切了工作表后，界面显示的是新表名，但后端会话（暂存文件）还是旧表，
+    字段对应表与真实来源对不上，确认预览时报「来源字段不存在：xxx」。
+    """
+    vue = (FRONTEND / "components" / "LisDataOrganizer.vue").read_text(encoding="utf-8")
+    start = vue.index('v-model="selectedSheet"')
+    picker = vue[start:vue.index("</select>", start)]
+    assert '@change="previewImported"' in picker, "切换工作表后必须重新读取已导入表"

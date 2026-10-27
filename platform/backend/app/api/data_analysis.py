@@ -141,6 +141,15 @@ class LisConfirmPayload(BaseModel):
     lab: str = ""
 
 
+class LisPreviewStandardPayload(BaseModel):
+    session_id: str
+    mapping: list[LisMappingItem]
+    header_row: int
+    lab: str = ""
+    page: int = 1
+    page_size: int = 50
+
+
 def wrap_error(error: Exception, status_code: int = 400) -> HTTPException:
     return HTTPException(status_code=status_code, detail=str(error))
 
@@ -162,11 +171,93 @@ def lis_template() -> dict[str, Any]:
         raise wrap_error(error) from error
 
 
+# ---------------------------------------------------------------- 标准字段设置
+@router.get("/lis/fields")
+def lis_fields_get() -> dict[str, Any]:
+    """生效的标准字段定义（出厂定义 + 本机自定义）。"""
+    try:
+        return lis_service.field_definitions_status()
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/lis/fields")
+def lis_fields_save(payload: dict[str, Any]) -> dict[str, Any]:
+    """保存本机的标准字段定义（可改名 / 改分组 / 改必填 / 改类型 / 新增 / 删除）。"""
+    try:
+        result = lis_service.save_field_definitions(payload)
+        result["status"] = lis_service.field_definitions_status()
+        return result
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/lis/fields/reset")
+def lis_fields_reset() -> dict[str, Any]:
+    """恢复出厂标准字段。"""
+    try:
+        result = lis_service.reset_field_definitions()
+        result["status"] = lis_service.field_definitions_status()
+        return result
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.get("/lis/imported-sources")
+def lis_imported_sources() -> dict[str, Any]:
+    try:
+        return {"sources": lis_service.imported_sources()}
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.get("/lis/taxonomy")
+def lis_taxonomy() -> dict[str, Any]:
+    try:
+        return {"items": lis_service.taxonomy_items()}
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/lis/classify")
+def lis_classify(payload: dict[str, Any]) -> dict[str, Any]:
+    """按检测项目名称 / 项目英文名称批量判定专业与组套。
+
+    前端预览直接调这个接口，规则与后端保存时完全一致，避免两套实现漂移。
+    """
+    try:
+        rows = payload.get("rows")
+        if not isinstance(rows, list):
+            raise ValueError("rows 必须是数组")
+        results = []
+        for item in rows:
+            if not isinstance(item, dict):
+                results.append({lis_service.SPECIALTY_KEY: "", lis_service.SUITE_KEY: ""})
+                continue
+            results.append(
+                lis_service.classify_project(
+                    item.get("test_name", ""),
+                    item.get("test_en_name", ""),
+                )
+            )
+        return {"results": results}
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
 @router.post("/lis/preview")
 async def lis_preview(file: UploadFile = File(...), header_row: int | None = None) -> dict[str, Any]:
     try:
         content = await file.read(lis_service.MAX_UPLOAD_BYTES + 1)
         return lis_service.preview_upload(file.filename or "lis.xlsx", content, header_row)
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/lis/preview-imported")
+def lis_preview_imported(dataset_id: str, sheet: str = "", header_row: int | None = None) -> dict[str, Any]:
+    try:
+        return lis_service.preview_imported_dataset(dataset_id, sheet, header_row)
     except Exception as error:
         raise wrap_error(error) from error
 
@@ -177,6 +268,79 @@ def lis_confirm(payload: LisConfirmPayload) -> dict[str, Any]:
         return lis_service.confirm_save(payload.session_id, [item.model_dump() for item in payload.mapping], payload.header_row, payload.lab)
     except Exception as error:
         raise wrap_error(error) from error
+
+
+@router.post("/lis/preview-standard")
+def lis_preview_standard(payload: LisPreviewStandardPayload) -> dict[str, Any]:
+    """按当前字段映射生成标准化预览，可翻页浏览全部数据行。
+
+    与保存走同一份构建逻辑（_standard_payload），预览所见即保存所得。
+    """
+    try:
+        return lis_service.preview_standard(
+            payload.session_id, [item.model_dump() for item in payload.mapping],
+            payload.header_row, payload.lab, payload.page, payload.page_size,
+        )
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/lis/export")
+def lis_export(payload: LisPreviewStandardPayload) -> FileResponse:
+    """按当前字段映射导出标准化 Excel（不写入"已整理"记录）。"""
+    try:
+        path, filename = lis_service.export_standard(
+            payload.session_id, [item.model_dump() for item in payload.mapping], payload.header_row, payload.lab,
+        )
+        return FileResponse(path, filename=filename)
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+# ---------------------------------------------------------------- TAT
+@router.get("/tat/standards")
+def tat_standards_get() -> dict[str, Any]:
+    """实验室 TAT 标准：生化/免疫/血常规/凝血 × 平诊/急诊。"""
+    try:
+        return service.tat_standards()
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/tat/standards")
+def tat_standards_post(payload: dict[str, Any]) -> dict[str, Any]:
+    """保存实验室 TAT 标准。"""
+    try:
+        return service.tat_standards(payload)
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.post("/tat/analyze")
+def tat_analyze_api(payload: dict[str, Any]) -> dict[str, Any]:
+    """TAT 分析：主指标 + 四个分段 + 实验室内 TAT + ToTAT + 超标判定。"""
+    try:
+        return service.tat_analyze_result(payload)
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.get("/lis/saved-batches")
+def lis_saved_batches() -> dict[str, Any]:
+    """已整理并保存的数据表格列表。"""
+    try:
+        return {"batches": lis_service.saved_batches()}
+    except Exception as error:
+        raise wrap_error(error) from error
+
+
+@router.delete("/lis/saved-batches/{batch_id}")
+def lis_delete_saved_batch(batch_id: str) -> dict[str, Any]:
+    """删除一条已整理记录（连带删除标准化 Excel 文件）。"""
+    try:
+        return lis_service.delete_saved_batch(batch_id)
+    except Exception as error:
+        raise wrap_error(error, 404) from error
 
 
 @router.get("/embed-status")

@@ -115,6 +115,13 @@ def import_upload(files: list[tuple[str, bytes]], lab: str = "", table_type: str
             try:
                 dataset = engine.import_file(str(temp_path), copy=True, lab=lab, table_type=table_type, display_name=safe_name)
                 imported.append(engine.ds_summary(dataset))
+                # ★ 子表解析失败也要报出来，不能让整个文件"看起来导入成功"
+                for sheet in dataset.get("sheets") or []:
+                    if sheet.get("error"):
+                        errors.append({
+                            "filename": "%s / %s" % (safe_name, sheet.get("name") or "?"),
+                            "error": str(sheet.get("error")),
+                        })
             except Exception as error:
                 errors.append({"filename": safe_name, "error": str(error)})
     engine.save_state()
@@ -129,6 +136,12 @@ def import_paths(paths: list[str], lab: str = "", table_type: str = "") -> dict[
         try:
             dataset = engine.import_file(path, copy=True, lab=lab, table_type=table_type)
             imported.append(engine.ds_summary(dataset))
+            for sheet in dataset.get("sheets") or []:
+                if sheet.get("error"):
+                    errors.append({
+                        "path": "%s / %s" % (path, sheet.get("name") or "?"),
+                        "error": str(sheet.get("error")),
+                    })
         except Exception as error:
             errors.append({"path": path, "error": str(error)})
     engine.save_state()
@@ -166,31 +179,26 @@ def dataset_delete(ids: list[str], delete_files: bool = True) -> dict[str, Any]:
     _ensure_initialized()
     remaining = []
     removed = []
+    not_deleted: list[str] = []
     for dataset in engine.STATE["datasets"]:
         if dataset.get("id") in ids:
             removed.append(dataset.get("name"))
             if delete_files:
-                path = engine.ds_abs_path(dataset)
-                try:
-                    Path(path).unlink(missing_ok=True)
-                except Exception:
-                    pass
-                # 大表模式：连专属 SQLite 一起删
-                try:
-                    dbp = engine._ds_db_path(dataset, (dataset.get("sheets") or [{}])[0])
-                    if dataset.get("large") and os.path.isfile(dbp):
-                        os.remove(dbp)
-                except Exception:
-                    pass
+                # 源文件副本 + 每个大表的 SQLite 一起删（统一走引擎的公共函数）
+                not_deleted.extend(engine.purge_dataset_files(dataset) or [])
         else:
             remaining.append(dataset)
     engine.STATE["datasets"] = remaining
     engine.save_state()
-    return {"removed": removed, "state": state()}
+    return {"removed": removed, "not_deleted": not_deleted, "state": state()}
 
 
 def dataset_clear() -> dict[str, Any]:
     _ensure_initialized()
+    # ★ 清空全部：源文件副本和大表 SQLite 都要删。
+    #   以前这里只清了索引 → 磁盘上几百 MB 的文件全留着。
+    for dataset in engine.STATE["datasets"]:
+        engine.purge_dataset_files(dataset)
     engine.STATE["datasets"] = []
     engine.save_state()
     return {"state": state()}
@@ -214,6 +222,45 @@ def preview(dataset_id: str, sheet: str) -> dict[str, Any]:
     }
 
 
+def tat_standards(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """实验室 TAT 标准：按 生化/免疫/血常规/凝血 × 平诊/急诊。
+
+    传 payload（{"save": true, "limits": {...}, "target": "lab_tat"}）则保存。
+    """
+    _ensure_initialized()
+    from modules.data_analysis import tat_rules as TR
+
+    if payload and payload.get("save"):
+        # ★ 两种传法都认：{save, payload:{...}} 或 {save, limits:{...}, target}
+        body = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
+        data = TR.save_standards(engine.LIB_DIR, body)
+    else:
+        data = TR.load_standards(engine.LIB_DIR)
+    data["defaults"] = TR.default_standards()["limits"]   # 「恢复默认」用
+    return {"standards": data, "specialties": list(TR.STANDARD_SPECIALTIES)}
+
+
+def tat_analyze_result(payload: dict[str, Any]) -> dict[str, Any]:
+    """TAT 分析（含分段、实验室内 TAT、超标判定）。"""
+    _ensure_initialized()
+    from modules.data_analysis import tat_rules as TR
+
+    result_id = str(payload.get("result_id") or "")
+    result = engine.get_result(result_id)
+    if not result:
+        raise ValueError("结果不存在或已过期，请先生成或选择一个分析结果")
+    standards = None
+    if payload.get("use_standard"):
+        standards = TR.load_standards(engine.LIB_DIR)
+    return engine.tat_analyze(
+        result["columns"], result["rows"],
+        str(payload.get("start") or ""), str(payload.get("end") or ""),
+        str(payload.get("group") or ""), str(payload.get("tot_start") or ""),
+        payload.get("stages") or None, standards,
+        str(payload.get("specialty_col") or ""), str(payload.get("urgency_col") or ""),
+    )
+
+
 def raw_preview(dataset_id: str, sheet: str = "", offset: int = 0, size: int = 100, edit: bool = False) -> dict[str, Any]:
     _ensure_initialized()
     if edit:
@@ -225,9 +272,31 @@ def raw_preview(dataset_id: str, sheet: str = "", offset: int = 0, size: int = 1
     path = engine.ds_abs_path(dataset)
     names = engine.sheet_names(path)
     active_sheet = sheet if sheet in names else (names[0] if names else "")
-    rows = engine.cached_raw(path, active_sheet)
     size = max(1, min(int(size), engine.MAX_PAGE_ROWS))
     offset = max(0, int(offset))
+
+    # ★ 大表：数据在专属 SQLite 里，必须分页取，绝不整表读进内存。
+    #   （原生引擎的 /api/raw_preview 早就有这个分支，这里以前漏了 ———
+    #     54 万行 × 52 列整表读进来会直接撑爆内存。）
+    if dataset.get("large"):
+        sheet_meta = next((item for item in dataset.get("sheets", [])
+                           if item.get("name") == active_sheet), None)
+        if sheet_meta is None:
+            raise ValueError("工作表不存在：%s" % active_sheet)
+        page = engine._large_page(dataset, sheet_meta, offset, size)
+        return {
+            "rows": [[engine.cell_to_text(value) for value in row] for row in page],
+            "sheets": [item.get("name") for item in dataset.get("sheets", [])],
+            "sheet": active_sheet,
+            "offset": offset,
+            "size": size,
+            "total": sheet_meta.get("rows") or 0,
+            "cols": len(sheet_meta.get("columns") or []),
+            "large": True,
+            "editable": False,
+        }
+
+    rows = engine.cached_raw(path, active_sheet)
     page = rows[offset:offset + size]
     return {
         "rows": [[engine.cell_to_text(value) for value in row] for row in page],

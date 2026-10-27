@@ -21,9 +21,11 @@ import threading
 import time
 import uuid
 import gzip
+import hashlib
 import webbrowser
 import traceback
 import unicodedata
+from bisect import bisect_left
 from collections import Counter
 import urllib.request
 import urllib.error
@@ -205,7 +207,62 @@ def load_state():
         except Exception:
             traceback.print_exc()
     _sweep_test_clones()
+    _sweep_import_tmp()
+    _sweep_self_referencing_dirs()
     return STATE
+
+
+def _is_data_dir(path):
+    """这个路径是不是数据目录本身（含它的子目录）。
+
+    ★ 为什么需要：library/sources 里放的是**我们自己的副本**。
+      一旦它被记进"最近导入来源目录"，"一键恢复/扫描目录"就会把
+      这些副本当成外部原始文件再导一遍 —— 文件越堆越多、越导越慢，
+      最后自己把自己压死（实测 sources 里堆了 4 个 _tmp_ 残留 + 3 份孤儿副本）。
+    """
+    try:
+        p = os.path.abspath(path).rstrip("\\/").lower()
+        base = os.path.abspath(DATA_DIR).rstrip("\\/").lower()
+        return p == base or p.startswith(base + os.sep)
+    except Exception:
+        return False
+
+
+def _sweep_import_tmp():
+    """清掉 sources 里上次导入残留的 _tmp_ 临时文件。
+
+    ★ 为什么需要：上传时先把文件写成 _tmp_xxx 再改名。导入过程中进程被
+      杀掉（内存爆掉是主因），finally 来不及跑，_tmp_ 就留在磁盘上。
+      实测一个 _tmp_ 就是 66~92MB，攒几次就把目录撑爆。
+    """
+    try:
+        if not os.path.isdir(SRC_DIR):
+            return
+        stale = [f for f in os.listdir(SRC_DIR) if f.startswith("_tmp_")]
+        for f in stale:
+            try:
+                os.remove(os.path.join(SRC_DIR, f))
+            except Exception:
+                pass
+        if stale:
+            print("  [自检] 清理了 %d 个上次导入残留的临时文件" % len(stale))
+    except Exception:
+        pass
+
+
+def _sweep_self_referencing_dirs():
+    """把"最近导入来源目录"里指向数据目录自身的条目剔掉。"""
+    try:
+        cfg = STATE.get("config") or {}
+        arr = cfg.get("recent_source_dirs") or []
+        keep = [d for d in arr if d and not _is_data_dir(d)]
+        if len(keep) != len(arr):
+            cfg["recent_source_dirs"] = keep
+            save_state()
+            print("  [自检] 剔除了 %d 个指向数据目录自身的导入来源"
+                  % (len(arr) - len(keep)))
+    except Exception:
+        pass
 
 
 def _sweep_test_clones():
@@ -278,12 +335,15 @@ def save_state():
 
 def get_config(public=True):
     cfg = json.loads(json.dumps(STATE["config"]))
-    if public and cfg["ai"].get("api_key"):
-        k = cfg["ai"]["api_key"]
-        cfg["ai"]["api_key_masked"] = k[:4] + "*" * max(0, len(k) - 8) + k[-4:] if len(k) > 8 else "****"
-        cfg["ai"]["has_key"] = True
+    # ★ 用 setdefault 兜底：config 缺 "ai"/"dingtalk" 时不该整个接口崩掉
+    #   （测试替身、迁移脚本、老索引都可能缺键）。
+    ai = cfg.setdefault("ai", {})
+    if public and ai.get("api_key"):
+        k = ai["api_key"]
+        ai["api_key_masked"] = k[:4] + "*" * max(0, len(k) - 8) + k[-4:] if len(k) > 8 else "****"
+        ai["has_key"] = True
     else:
-        cfg["ai"]["has_key"] = bool(cfg["ai"].get("api_key"))
+        ai["has_key"] = bool(ai.get("api_key"))
     # 钉钉 token 同样只回显掩码，不回传明文
     dt = cfg.setdefault("dingtalk", {})
     tk = dt.get("token") or ""
@@ -300,6 +360,35 @@ _cache = {}
 _raw_cache = {}
 _merge_cache = {}
 _CACHE_MAX = 24
+_wb_cache = {}          # (path, mtime) -> openpyxl read_only workbook
+
+
+def _shared_workbook(path):
+    """同一个文件共用一个 read_only workbook。
+
+    ★ v2.4.1 性能修复：原来每个工作表都 load_workbook 一次 ——
+      每次都要重新打开 zip、解析 workbook.xml 和全部工作表的头。
+      17 个工作表就是 17 次（实测每次 5.9 秒），纯浪费。
+      read_only 模式下每个 sheet 的 iter_rows 都会重读该 sheet 的 XML，
+      所以共用一个 workbook 对象是安全的。
+    """
+    try:
+        key = (path, os.path.getmtime(path) if os.path.exists(path) else 0)
+    except OSError:
+        key = (path, 0)
+    wb = _wb_cache.get(key)
+    if wb is not None:
+        return wb
+    import openpyxl
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    if len(_wb_cache) > 4:
+        for k in list(_wb_cache)[:len(_wb_cache) // 2]:
+            try:
+                _wb_cache.pop(k).close()
+            except Exception:
+                pass
+    _wb_cache[key] = wb
+    return wb
 
 
 def cached_raw(path, sheet_name):
@@ -316,7 +405,7 @@ def cached_raw(path, sheet_name):
         # 关键：先用正则扫出"真正带值的最大行"。
         # 否则遇到拖过格式的表（dimension 声称 1048576 行）会白读上百万行。
         real_max = max_data_row(path, sheet_name)
-        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        wb = _shared_workbook(path)
         try:
             if sheet_name not in wb.sheetnames:
                 raise ValueError("工作表不存在：%s" % sheet_name)
@@ -332,10 +421,8 @@ def cached_raw(path, sheet_name):
             for r in it:
                 rows.append(list(r))
         finally:
-            try:
-                wb.close()
-            except Exception:
-                pass
+            # 注意：workbook 是共享的，不能在这里 close（否则别的表就读不了了）
+            pass
         merges = read_merges_from_xlsx(path, sheet_name)
     elif fmt == table_format.FMT_OLE_XLS:
         try:
@@ -458,7 +545,29 @@ def _col_letters_to_idx(letters):
 
 
 def _xlsx_sheet_xml(path, sheet_name):
-    """取出某个工作表的 sheetN.xml 文本（取不到返回 None）"""
+    """取出某个工作表的 sheetN.xml 文本（取不到返回 None）
+
+    ★ 注意：这是"整份读进内存"的版本，只在确实需要全文时才用
+      （例如小文件）。大文件请改用 _xlsx_sheet_stats / _xlsx_sheet_merges，
+      它们是流式解析，峰值内存只有几 MB。
+    """
+    p = _xlsx_sheet_xml_path(path, sheet_name)
+    if not p:
+        return None
+    import zipfile
+    try:
+        z = zipfile.ZipFile(path)
+    except Exception:
+        return None
+    with z:
+        try:
+            return z.read(p).decode("utf-8", "replace")
+        except KeyError:
+            return None
+
+
+def _xlsx_sheet_xml_path(path, sheet_name):
+    """定位某个工作表在 xlsx 里的 XML 路径（如 xl/worksheets/sheet1.xml）。"""
     import zipfile
     import xml.etree.ElementTree as ET
     NS_M = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -484,10 +593,97 @@ def _xlsx_sheet_xml(path, sheet_name):
         p = target.lstrip("/")
         if not p.startswith("xl/"):
             p = "xl/" + p.lstrip("./")
+        return p
+
+
+_NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _xlsx_sheet_stats(path, sheet_name):
+    """流式扫一个工作表，返回真实统计。
+
+    返回 {"max_row": 带值单元格所在的最大行号, "cells": 带值单元格数,
+          "rows": <row> 标签数}。
+
+    ★ 为什么必须流式：旧实现把整份 sheet XML 读进内存再正则扫描，
+      一个 94MB 的工作表峰值 220MB、单次 30 秒；一个文件 17 个工作表，
+      光这一项就要十几分钟，还把内存撑爆导致导入失败。
+      现在用 expat 增量解析，边读边算，峰值只有几 MB。
+    """
+    p = _xlsx_sheet_xml_path(path, sheet_name)
+    if not p:
+        return {"max_row": 0, "cells": 0, "rows": 0}
+    import zipfile
+    import xml.etree.ElementTree as ET
+    try:
+        z = zipfile.ZipFile(path)
+    except Exception:
+        return {"max_row": 0, "cells": 0, "rows": 0}
+    mx = 0
+    cells = 0
+    rows = 0
+    row_tag = _NS_MAIN + "row"
+    cell_tag = _NS_MAIN + "c"
+    with z:
         try:
-            return z.read(p).decode("utf-8", "replace")
+            fh = z.open(p)
         except KeyError:
-            return None
+            return {"max_row": 0, "cells": 0, "rows": 0}
+        with fh:
+            for _event, elem in ET.iterparse(fh, events=("end",)):
+                tag = elem.tag
+                if tag == cell_tag:
+                    # 带值的单元格 = 标签不是自闭合（有 <v> / <is> 等子元素）
+                    if len(elem):
+                        cells += 1
+                        cr = elem.get("r")
+                        if cr:
+                            digits = cr.lstrip(_UPPER)
+                            if digits.isdigit():
+                                n = int(digits)
+                                if n > mx:
+                                    mx = n
+                    elem.clear()
+                elif tag == row_tag:
+                    rows += 1
+                    elem.clear()
+    return {"max_row": mx, "cells": cells, "rows": rows}
+
+
+def _xlsx_sheet_merges(path, sheet_name):
+    """流式取合并单元格区域：[(起始行, 结束行, 起始列, 结束列)]，行从 1 开始。"""
+    p = _xlsx_sheet_xml_path(path, sheet_name)
+    if not p:
+        return []
+    import zipfile
+    import xml.etree.ElementTree as ET
+    out = []
+    merge_tag = _NS_MAIN + "mergeCell"
+    try:
+        z = zipfile.ZipFile(path)
+    except Exception:
+        return []
+    with z:
+        try:
+            fh = z.open(p)
+        except KeyError:
+            return []
+        with fh:
+            for _event, elem in ET.iterparse(fh, events=("end",)):
+                if elem.tag == merge_tag:
+                    ref = elem.get("ref")
+                    if ref and ":" in ref:
+                        a, _, b = ref.partition(":")
+                        mA = re.match(r"([A-Z]+)(\d+)", a)
+                        mB = re.match(r"([A-Z]+)(\d+)", b)
+                        if mA and mB:
+                            # (起始行, 结束行, 起始列, 结束列)
+                            out.append((int(mA.group(2)), int(mB.group(2)),
+                                        _col_letters_to_idx(mA.group(1)),
+                                        _col_letters_to_idx(mB.group(1))))
+                    elem.clear()
+    return out
 
 
 # 匹配"带值"的单元格：<c r="B5" s="3"><v>1</v></c> 算，
@@ -503,43 +699,23 @@ def max_data_row(path, sheet_name):
     这个表有 1048576 行，XML 里也真的塞了上百万个 <row r="N"/> 空标签。
     如果直接信 openpyxl 的 max_row，就要白读上百万行 ——
     实测一个 4MB 的工作簿因此要 25 秒，内存暴涨。
-    这里先用正则扫一遍，只取"带值的单元格"的最大行号，把读取量压到真实规模。
+    这里用 expat 增量解析（流式），只取"带值的单元格"的最大行号，把读取量压到真实规模。
+
+    ★ v2.4.1 性能修复：旧实现把整份 sheet XML 读进内存（94MB → 峰值 220MB）
+      再用正则扫一遍、且每个单元格还要再跑一次正则抠行号，单表 30 秒。
+      现在改成流式解析，峰值几 MB、耗时降到三分之一以下。
     """
-    txt = _xlsx_sheet_xml(path, sheet_name)
-    if not txt:
-        return 0
-    mx = 0
-    for m in _CELL_RE.finditer(txt):
-        attrs, selfclose = m.group(1), m.group(2)
-        if selfclose:
-            continue              # 空单元格（只有格式），不算数据
-        r = m.start()
-        # 从标签里把行号抠出来
-        pm = re.search(r'r="[A-Z]+(\d+)"', m.group(0))
-        if pm:
-            v = int(pm.group(1))
-            if v > mx:
-                mx = v
-    return mx
+    return _xlsx_sheet_stats(path, sheet_name)["max_row"]
 
 
 def read_merges_from_xlsx(path, sheet_name):
     """
     直接解析 xlsx 内部的 XML 取合并单元格区域（只读模式拿不到 merged_cells）。
     返回 [(起始行, 结束行, 起始列, 结束列)]；行从 1 开始编号，列从 0 开始。
+
+    ★ v2.4.1：改成流式解析，不再把整份 sheet XML 读进内存。
     """
-    out = []
-    data = _xlsx_sheet_xml(path, sheet_name)
-    if not data:
-        return out
-    for a, b in re.findall(r'<mergeCell[^>]*ref="([A-Z]+\d+):([A-Z]+\d+)"', data):
-        mA = re.match(r"([A-Z]+)(\d+)", a)
-        mB = re.match(r"([A-Z]+)(\d+)", b)
-        if not mA or not mB:
-            continue
-        out.append((int(mA.group(2)), int(mB.group(2)),
-                    _col_letters_to_idx(mA.group(1)), _col_letters_to_idx(mB.group(1))))
-    return out
+    return _xlsx_sheet_merges(path, sheet_name)
 
 
 def read_csv_rows(path):
@@ -615,11 +791,16 @@ def build_table(path, sheet_name, header_rows="1"):
 
     # 表头原始行的"指纹"（用来跳过文件中间重复出现的表头行）
     hdr_sigs = set()
+    hdr_first = set()          # 表头行首个非空单元格的 norm 值，用于快速排除
     for i in hdr_idx:
         if i < len(rows):
             sig = tuple(norm(cell_to_text(v)) for v in rows[i])
             if any(sig):
                 hdr_sigs.add(sig)
+                for _s in sig:
+                    if _s:
+                        hdr_first.add(_s)
+                        break
 
     # ---- 关键改进：表头下方如果还有"标签在A列 / 内容在B列"的说明行，自动并入字段名 ----
     note_rows = []
@@ -653,9 +834,18 @@ def build_table(path, sheet_name, header_rows="1"):
     body = []
     for r in rows[body_start:]:
         texts = [cell_to_text(v) for v in r]
-        if not any(texts):
+        # ★ 每行只跑一次 norm（取首个非空单元格），而不是每列都跑一次。
+        #   原来 tuple(norm(t) for t in texts) 要跑满列数，96779×30 ≈ 290 万次。
+        first = ""
+        has = False
+        for t in texts:
+            if t:
+                has = True
+                if not first:
+                    first = norm(t)
+        if not has:
             continue
-        if tuple(norm(t) for t in texts) in hdr_sigs:
+        if first and first in hdr_first and tuple(norm(t) for t in texts) in hdr_sigs:
             continue
         body.append(texts)
 
@@ -665,6 +855,19 @@ def build_table(path, sheet_name, header_rows="1"):
         extra = note_map.get(norm(nm))
         enriched.append("%s（%s）" % (nm, extra) if nm and extra else nm)
 
+    # ★ 一次遍历统计每列是否非空，替代原来两遍 O(列×行) 的全表扫描
+    #   （96779 行 × 30 列 × 2 遍 ≈ 580 万次判断，是 build_table 最大的一块开销）。
+    #   body 里的元素都经过 cell_to_text，全是字符串，不会有 None，
+    #   所以 r[c] != "" 与 r[c] not in ("", None) 在这里等价。
+    col_has_data = [False] * ncol
+    for r in body:
+        nr = len(r)
+        if nr > ncol:
+            nr = ncol
+        for c in range(nr):
+            if r[c] != "":
+                col_has_data[c] = True
+
     # 去掉"表头为空 且 整列为空"的列
     keep = []
     for c in range(len(enriched)):
@@ -673,16 +876,13 @@ def build_table(path, sheet_name, header_rows="1"):
         if enriched[c].strip():
             keep.append(c)
             continue
-        if any(c < len(r) and r[c] != "" for r in body):
+        if col_has_data[c]:
             keep.append(c)
 
     # 表头去重（同时保留一份"纯表头"的名字，供字段字典使用）
     # ★ 重复表头且整列无数据的列（模板残留空列）直接丢弃，不再产生 _2 幽灵字段；
     #   有数据的重复列仍保留并加 _2 后缀，绝不丢真数据。
-    empty_cols = set()
-    for c in range(ncol):
-        if not any((r[c] if c < len(r) else "") not in ("", None) for r in body):
-            empty_cols.add(c)
+    empty_cols = set(c for c in range(ncol) if not col_has_data[c])
     final, base_final, seen, seen_base = [], [], {}, {}
     keep2 = []
     for c in keep:
@@ -927,6 +1127,24 @@ def detect_header_block(rows, merges=None, fallback=1):
     #   （用户把一张表清空了 → 回写 → 重解析 → 0 行），就踩到了。
     if not rows:
         return str(fallback or 1)
+    # ★ 预计算「数据行」下标（整行至少 2 个非空单元格）。
+    #   原来是在每个 (a, span) 候选里对 rows[a+span:] 全量过滤一遍 ——
+    #   96779 行 × 30 列 × 最多 75 个候选 ≈ 2.2 亿次 is_blank 调用，
+    #   实测单个工作表就要 310 秒，是「导入慢」的头号元凶。
+    #   而后面只用到三件事：有没有数据行 / 数据行数是否 <3 / 前 150 行样本，
+    #   全量过滤出来的 data 列表根本没被用到，取全量毫无意义。
+    _data_idx = []
+    _add_idx = _data_idx.append
+    for _i, _r in enumerate(rows):
+        _n = 0
+        for _v in _r:
+            if not is_blank(_v):
+                _n += 1
+                if _n >= 2:
+                    break
+        if _n >= 2:
+            _add_idx(_i)
+    _n_data_total = len(_data_idx)
     for a in range(0, min(25, max(1, len(rows) - 1))):
         head = [cell_to_text(v) for v in rows[a]]
         nz = [(i, t) for i, t in enumerate(head) if t]
@@ -961,20 +1179,22 @@ def detect_header_block(rows, merges=None, fallback=1):
                     break
 
             # 表头行数 = span，下行开始数数据行
-            data = [r for r in rows[a + span:] if sum(1 for v in r if not is_blank(v)) >= 2]
-            if not data:
+            # ★ 用预计算的下标表定位，避免每个候选都全表过滤（见上方注释）
+            _pos = bisect_left(_data_idx, a + span)
+            n_data = _n_data_total - _pos
+            if n_data == 0:
                 continue
             # 数据行不足 3 行时，"数据列类型是否稳定"这套统计判据失效。
             # 小表（上面标题/说明、中间真表头、下面只有一两行数据）改成强判据：
             # 表头必须至少有 3 个非空单元格，且不能混有数字。
-            thin = len(data) < 3
+            thin = n_data < 3
+            sample = [rows[i] for i in _data_idx[_pos:_pos + 150]]
             head_num_pre = sum(1 for _, t in nz if is_num_text(t))
             if thin and (len(nz) < 3 or head_num_pre > 0):
                 continue
             # 关键：数据行的每一列要有稳定的"类型"（数字列/文本列），否则说明认错表头了。
             # 注意：稀疏列（填得很少，比如整列还没填）不能算作"不整齐"，
             # 否则一份"下游还没填"的空模板会被判成没表头，字段名就变成 列6/列7/列8。
-            sample = data[:150]
             dense = consistent = 0
             for c in range(min(len(head), 60)):
                 if not head[c]:
@@ -1224,6 +1444,31 @@ def refresh_metadata(force=False):
     return changed
 
 
+def _rollback_import(ds_id, stored_abs=None):
+    """导入失败时清掉这次留下的东西：sources 里的副本 + 专属 SQLite。
+
+    ★ 为什么必须回滚：复制进来的文件已经躺在 sources/ 里了，但索引里
+      没有对应记录 —— 这就是"孤儿副本"。用户看到的是"导入失败"，
+      磁盘上却多了一份几十上百 MB 的文件；下次扫描目录还会被当成源文件
+      再导一遍，越导越多、越导越慢。
+    """
+    try:
+        if stored_abs and os.path.isfile(stored_abs):
+            os.remove(stored_abs)
+    except Exception:
+        pass
+    try:
+        dbdir = os.path.join(LIB_DIR, "db")
+        for fn in os.listdir(dbdir):
+            if fn.startswith(ds_id + "_"):
+                try:
+                    os.remove(os.path.join(dbdir, fn))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 def import_file(path, copy=True, lab="", table_type="", header_rows=None, display_name=None):
     path = os.path.abspath(path)
     if not os.path.isfile(path):
@@ -1248,52 +1493,62 @@ def import_file(path, copy=True, lab="", table_type="", header_rows=None, displa
     shutil.copy2(path, stored_abs)
 
     sheets_meta = []
-    large_file = size > LARGE_FILE_BYTES
-    for sn in sheet_names(stored_abs):
-        if large_file:
-            # ★ 大文件流式导入：逐行写进专属 SQLite，不整表进内存
+    file_large = size > LARGE_FILE_BYTES
+    try:
+        for sn in sheet_names(stored_abs):
+            # ★ 大表判定：文件整体太大，或者这张表本身数据量大 → 流式进 SQLite。
+            #   只按"文件字节数"判会漏掉真正的大表：66MB 的文件里有 17 个工作表，
+            #   其中两个的 XML 解压后就有 94MB / 103MB，整表进内存必爆。
+            if file_large or _sheet_is_large(stored_abs, sn):
+                # ★ 大文件流式导入：逐行写进专属 SQLite，不整表进内存
+                try:
+                    sm = _import_sheet_stream(stored_abs, sn, ds_id)
+                    sheets_meta.append(sm)
+                except Exception as e:
+                    traceback.print_exc()
+                    sheets_meta.append({"name": sn, "header_rows": "1", "rows": 0,
+                                        "columns": [], "signature": "", "error": str(e)})
+                continue
             try:
-                sm = _import_sheet_stream(stored_abs, sn, ds_id)
-                sheets_meta.append(sm)
+                rows = cached_raw(stored_abs, sn)
             except Exception as e:
-                traceback.print_exc()
                 sheets_meta.append({"name": sn, "header_rows": "1", "rows": 0,
                                     "columns": [], "signature": "", "error": str(e)})
-            continue
-        try:
-            rows = cached_raw(stored_abs, sn)
-        except Exception as e:
-            sheets_meta.append({"name": sn, "header_rows": "1", "rows": 0,
-                                "columns": [], "signature": "", "error": str(e)})
-            continue
-        if header_rows:
-            hr = str(header_rows)
-        else:
-            hr = detect_header_block(rows, cached_merges(stored_abs, sn))
-        try:
-            t = build_table(stored_abs, sn, hr)
-        except Exception as e:
-            sheets_meta.append({"name": sn, "header_rows": hr, "rows": 0,
-                                "columns": [], "signature": "", "error": str(e)})
-            continue
-        kind = "table"
-        # 列式解析几乎没结果，且"标签|值"成对出现 → 判定为信息表
-        if t["rows"] <= 1:
-            info = extract_info_map(rows, cached_merges(stored_abs, sn))
-            if len(info["text"]) >= 3:
-                kind = "info"
-                it = build_info_table(stored_abs, sn)
-                t = it
-        sheets_meta.append({
-            "name": sn,
-            "kind": kind,
-            "header_rows": hr,
-            "rows": t["rows"],
-            "columns": t["columns"],
-            "base_columns": t.get("base_columns") or t["columns"],
-            "signature": "|".join(sorted(norm(c) for c in t["columns"] if norm(c))),
-            "sample": t["records"][:3],
-        })
+                continue
+            if header_rows:
+                hr = str(header_rows)
+            else:
+                hr = detect_header_block(rows, cached_merges(stored_abs, sn))
+            try:
+                t = build_table(stored_abs, sn, hr)
+            except Exception as e:
+                sheets_meta.append({"name": sn, "header_rows": hr, "rows": 0,
+                                    "columns": [], "signature": "", "error": str(e)})
+                continue
+            kind = "table"
+            # 列式解析几乎没结果，且"标签|值"成对出现 → 判定为信息表
+            if t["rows"] <= 1:
+                info = extract_info_map(rows, cached_merges(stored_abs, sn))
+                if len(info["text"]) >= 3:
+                    kind = "info"
+                    it = build_info_table(stored_abs, sn)
+                    t = it
+            sheets_meta.append({
+                "name": sn,
+                "kind": kind,
+                "header_rows": hr,
+                "rows": t["rows"],
+                "columns": t["columns"],
+                "base_columns": t.get("base_columns") or t["columns"],
+                "signature": "|".join(sorted(norm(c) for c in t["columns"] if norm(c))),
+                "sample": t["records"][:3],
+            })
+    except Exception:
+        # ★ 导入失败要"干净"：把已经复制进来的文件和专属 SQLite 一起清掉。
+        #   否则 sources/ 里会堆一堆"孤儿副本"（导入失败但文件还在），
+        #   越积越多，下一次扫描目录还会把它们当源文件再导一遍，越导越慢。
+        _rollback_import(ds_id, stored_abs)
+        raise
 
     cfg = STATE["config"]
     ds = {
@@ -1315,8 +1570,11 @@ def import_file(path, copy=True, lab="", table_type="", header_rows=None, displa
     # 记录导入来源目录，方便"一键恢复"
     try:
         d = os.path.dirname(os.path.abspath(path))
-        arr = cfg.setdefault("recent_source_dirs", [])
-        if d and d not in arr:
+        arr = [x for x in (cfg.get("recent_source_dirs") or []) if x and not _is_data_dir(x)]
+        # ★ 数据目录自身（library/sources）绝不能记进"来源目录"。
+        #   上传导入时 path 就是 sources 里的 _tmp_ 文件，dirname 正好是 sources ——
+        #   于是"扫描目录恢复"会把自己的副本再导一遍，形成雪崩。
+        if d and d not in arr and not _is_data_dir(d):
             arr.insert(0, d)
         cfg["recent_source_dirs"] = arr[:12]
     except Exception:
@@ -1924,10 +2182,107 @@ def result_count():
         return len(_results)
 
 
-# ---------------- 大表模式（>100MB 的 xlsx 流式导入 SQLite，避免整表进内存） ----------------
-LARGE_FILE_BYTES = 100 * 1024 * 1024
+# ---------------- 大表模式（数据量大的表流式导入 SQLite，避免整表进内存） ----------------
+# ★ v2.4.1：判定依据从"文件有多少字节"改成"这张表实际有多少数据"。
+#   老办法只看文件大小 >100MB，于是 66MB 的《标本明细》（17 个工作表、
+#   解压后 367MB XML）和 92MB 的《检验单综合查询》全都走了"整表进内存"路径：
+#   内存被撑爆 → 导入中途被杀 → 只剩一堆 _tmp_ 残留和孤儿副本，索引还是空的。
+LARGE_FILE_BYTES = 100 * 1024 * 1024       # 文件本身超过这个大小，一律流式
+LARGE_SHEET_XML_BYTES = 8 * 1024 * 1024    # 单个工作表解压后超过这个大小，走流式
+LARGE_ROWS = 50_000                        # 数据行数超过这个，走流式
 LARGE_SAMPLE_ROWS = 60
 LARGE_MAX_COLS = 300
+
+# xlsx 工作表名 → xml 路径的缓存（同一个文件只解析一次中央目录）
+_sheet_map_cache = {}
+
+
+def _xlsx_sheet_map(path):
+    """{工作表名: xml 路径}；同一个文件只解析一次 workbook.xml。"""
+    try:
+        key = (path, os.path.getmtime(path) if os.path.exists(path) else 0)
+    except OSError:
+        key = (path, 0)
+    hit = _sheet_map_cache.get(key)
+    if hit is not None:
+        return hit
+    import zipfile
+    import xml.etree.ElementTree as ET
+    NS_M = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    NS_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    out = {}
+    try:
+        z = zipfile.ZipFile(path)
+    except Exception:
+        _sheet_map_cache[key] = out
+        return out
+    with z:
+        try:
+            wbx = ET.fromstring(z.read("xl/workbook.xml"))
+            rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+        except Exception:
+            _sheet_map_cache[key] = out
+            return out
+        relmap = {r.get("Id"): r.get("Target") for r in rels}
+        for sh in wbx.findall(".//%ssheets/%ssheet" % (NS_M, NS_M)):
+            target = relmap.get(sh.get(NS_R + "id"))
+            if not target:
+                continue
+            p = target.lstrip("/")
+            if not p.startswith("xl/"):
+                p = "xl/" + p.lstrip("./")
+            out[sh.get("name")] = p
+    if len(_sheet_map_cache) > 32:
+        _sheet_map_cache.clear()
+    _sheet_map_cache[key] = out
+    return out
+
+
+def _xlsx_sheet_xml_size(path, sheet_name):
+    """某个工作表 XML 解压后有多少字节（读 zip 中央目录，零成本）。"""
+    p = _xlsx_sheet_map(path).get(sheet_name)
+    if not p:
+        return 0
+    import zipfile
+    try:
+        z = zipfile.ZipFile(path)
+    except Exception:
+        return 0
+    with z:
+        try:
+            return z.getinfo(p).file_size
+        except KeyError:
+            return 0
+
+
+def _sheet_is_large(path, sheet_name):
+    """这张工作表是不是"大表"（该走流式 SQLite，而不是整表进内存）。"""
+    try:
+        fmt = sniff_table_format(path)
+    except Exception:
+        return False
+    if fmt == table_format.FMT_OPENXML:
+        # 用工作表 XML 的解压后大小当代理指标：比"文件总字节数"准得多，
+        # 也便宜得多（只读 zip 中央目录，不解压）。
+        return _xlsx_sheet_xml_size(path, sheet_name) > LARGE_SHEET_XML_BYTES
+    if fmt == table_format.FMT_OLE_XLS:
+        # .xls 是全量加载格式，行数直接从 xlrd 拿
+        try:
+            import xlrd
+            book = xlrd.open_workbook(path, on_demand=True)
+            try:
+                sheet = book.sheet_by_name(sheet_name)
+                return sheet.nrows > LARGE_ROWS
+            finally:
+                book.release_resources()
+        except Exception:
+            return False
+    # CSV / HTML：本身就小，按文件大小粗判
+    try:
+        return os.path.getsize(path) > LARGE_FILE_BYTES
+    except OSError:
+        return False
+
 
 
 def _ds_db_path(ds, sh=None):
@@ -1935,17 +2290,77 @@ def _ds_db_path(ds, sh=None):
     return os.path.join(LIB_DIR, rel)
 
 
+def purge_dataset_files(ds):
+    """删掉一个数据集在磁盘上的**全部**产物：源文件副本 + 每个大表的 SQLite。
+
+    ★ 源文件和 db 都得删。
+      只删源文件 → 大表库全成孤儿（实测一次「清空全部」能留下几百 MB）。
+      只删第一个子表的 db → 17 个子表留下 16 个孤儿。
+      删除和清空两条路径必须走同一个函数，否则总有一处漏。
+
+    ★★ 删源文件前必须先关掉缓存的 workbook：
+      read_only 模式会一直占着 zip 的文件句柄，Windows 上"文件被占着"就删不掉
+      （os.remove 报 [WinError 32]）。实测用户删除一个数据集后，
+      db 删干净了、源文件副本却留在磁盘上白占 66MB —— 就是被静默吞掉的删除失败。
+      所以这里先 _close_workbooks()，并且**删不掉要报出来**（不能静默 pass）。
+    """
+    source = ds_abs_path(ds)
+    failed = []
+    try:
+        _close_workbooks(source)
+    except Exception:
+        pass
+    try:
+        if source and os.path.isfile(source):
+            os.remove(source)
+    except OSError as error:
+        failed.append(os.path.basename(source))
+        print("  [警告] 源文件删除失败（可能正被 Excel/浏览器占用）：%s —— %s"
+              % (os.path.basename(source), error))
+    try:
+        for sheet in ds.get("sheets") or []:
+            dbp = _ds_db_path(ds, sheet)
+            if dbp and os.path.isfile(dbp):
+                os.remove(dbp)
+    except OSError as error:
+        failed.append(os.path.basename(dbp))
+        print("  [警告] 大表数据库删除失败：%s" % error)
+    return failed
+
+
+def _sheet_db_rel(ds_id, sheet_name):
+    """某个工作表的大表数据库文件名（相对 library/ 目录）。
+
+    ★ 必须保证**每个工作表一个独立文件名**。
+      旧实现把表名里的中文全换成下划线，于是
+      「生化MAX」和「免疫MAX」都变成 "__MAX"、「凝血」和「生化」都变成 "__" ——
+      后导入的那个会把前一个的库文件直接删掉重写（os.remove + 重建），
+      结果前者查出来是后者的数据（实测索引记 15755 行、库里只有 4250 行）。
+      现在在安全名后面补一段表名哈希，撞车就彻底不可能了。
+    """
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", sheet_name)[:24]
+    tag = hashlib.md5(sheet_name.encode("utf-8")).hexdigest()[:8]
+    return os.path.join("db", "%s_%s_%s.db" % (ds_id, safe, tag))
+
+
 def _import_sheet_stream(stored_abs, sn, ds_id):
     """大表专用：逐行流式读 xlsx，写入该数据集专属 SQLite，永不整表进内存。
     表头识别用前 60 行快照；列的保留/去重规则与 build_table 一致
     （表头非空或整列有数据才保留；重复表头且整列为空的模板残留列丢弃）。"""
     import sqlite3
-    db_rel = os.path.join("db", "%s_%s.db" % (ds_id, re.sub(r"[^A-Za-z0-9_-]", "_", sn)))
+    db_rel = _sheet_db_rel(ds_id, sn)
     db_abs = os.path.join(LIB_DIR, db_rel)
     os.makedirs(os.path.dirname(db_abs), exist_ok=True)
     if os.path.exists(db_abs):
         os.remove(db_abs)
     con = sqlite3.connect(db_abs)
+    # 这是"一次性建库"的中间产物（导入完就能查），不需要 WAL 和落盘同步 ——
+    # 开着它们，几十万行的 INSERT 会被 fsync 拖慢好几倍。
+    try:
+        con.execute("PRAGMA journal_mode=OFF")
+        con.execute("PRAGMA synchronous=OFF")
+    except Exception:
+        pass
     fmt = sniff_table_format(stored_abs)
     wb = None
     xls_book = None
@@ -1966,7 +2381,17 @@ def _import_sheet_stream(stored_abs, sn, ds_id):
         import openpyxl
         wb = openpyxl.load_workbook(stored_abs, read_only=True, data_only=True)
         ws = wb[sn]
-        row_iter = ws.iter_rows(values_only=True)
+        # ★ 必须限住 max_row：Excel 里给整列拖过格式的表，dimension 会声称
+        #   有 1048576 行，openpyxl 会照着读一百万个空行出来。
+        #   max_data_row 是流式算出来的真实带值行号。
+        real_max = max_data_row(stored_abs, sn)
+        if real_max > 0:
+            try:
+                row_iter = ws.iter_rows(values_only=True, max_row=real_max)
+            except TypeError:
+                row_iter = ws.iter_rows(values_only=True)
+        else:
+            row_iter = ws.iter_rows(values_only=True)
     try:
         ncols = 0
         total = 0
@@ -2003,9 +2428,8 @@ def _import_sheet_stream(stored_abs, sn, ds_id):
             total += 1
             if len(snapshot) < LARGE_SAMPLE_ROWS:
                 snapshot.append(vals)
-            for c, v in enumerate(vals):
-                if v:
-                    nonempty[c] = True
+            # 列非空标记不在这里算：正文列的判定要"跳过表头行"，
+            # 统一交给下面的 SQL 聚合做（快得多，也与 build_table 一致）。
             buf.append(tuple(vals))
             if len(buf) >= 5000:
                 flush()
@@ -2023,21 +2447,23 @@ def _import_sheet_stream(stored_abs, sn, ds_id):
     raw_names = build_header(snapshot, hdr_idx)
     skip = max(hdr_idx) + 1
 
-    # ★ 正文列非空标记：从 SQLite 全量行里扫（跳过表头行），保证 keep 规则与全表一致
+    # ★ 正文列非空标记 + 正文行数：交给 SQLite 自己算聚合，
+    #   不要把几十万行拉回 Python 逐行逐列判断（原来光这一段就要几十秒）。
+    #   MAX(LENGTH(c)) 对 "" 是 0、对 NULL 是 NULL，用 COALESCE 兜成 0，
+    #   与 Python 里 `if v:` 的判定完全一致。
+    data_rows = 0
     nonempty = {}
-    cur = con.execute("SELECT * FROM data")
-    ridx = 0
-    while True:
-        batch = cur.fetchmany(5000)
-        if not batch:
-            break
-        for r in batch:
-            ridx += 1
-            if ridx <= skip:
-                continue
-            for c, v in enumerate(r):
-                if v:
-                    nonempty[c] = True
+    if ncols:
+        sel = ",".join("COALESCE(MAX(LENGTH(c%d)),0)" % i for i in range(ncols))
+        res = con.execute(
+            "SELECT COUNT(*), %s FROM data WHERE rowid > ?" % sel, (skip,)).fetchone()
+        data_rows = res[0] or 0
+        for c in range(ncols):
+            if (res[c + 1] or 0) > 0:
+                nonempty[c] = True
+    else:
+        data_rows = con.execute(
+            "SELECT COUNT(*) FROM data WHERE rowid > ?", (skip,)).fetchone()[0]
 
     keep, columns, base_columns = [], [], []
     seen, seen_base = {}, {}
@@ -2066,9 +2492,7 @@ def _import_sheet_stream(stored_abs, sn, ds_id):
 
     collist = ",".join("c%d" % k for k in keep)
     sample = [list(r) for r in con.execute(
-        "SELECT %s FROM data WHERE rowid > ? LIMIT 3" % collist, (skip,))]
-    data_rows = con.execute(
-        "SELECT COUNT(*) FROM data WHERE rowid > ?" % " ", (skip,)).fetchone()[0] if False else         con.execute("SELECT COUNT(*) FROM data WHERE rowid > ?", (skip,)).fetchone()[0]
+        "SELECT %s FROM data WHERE rowid > ? LIMIT 3" % collist, (skip,))] if keep else []
     con.close()
     return {
         "name": sn, "kind": "table", "header_rows": hr, "rows": data_rows,
@@ -2137,69 +2561,27 @@ def result_list():
     return out
 
 
-def tat_analyze(columns, rows, start_col, end_col, group_col=""):
-    """TAT（周转时间）分析：结束时间列 − 开始时间列 的时长统计。
-
-    纯读操作，不改任何数据。返回：总体 KPI（均值/中位数/P90/极值，单位小时）、
-    时长分布（分桶）、按分组列（如 模块/项目名称）的分组统计。
-    """
-    from . import report_templates as RT
-
-    cols = list(columns or [])
-    rows = list(rows or [])
-
-    def idx(name):
-        try:
-            return cols.index(name)
-        except ValueError:
-            return -1
-
-    si, ei = idx(start_col), idx(end_col)
-    if si < 0 or ei < 0:
-        raise ValueError("请选择有效的时间列（开始 / 结束）")
-    if si == ei:
-        raise ValueError("开始与结束时间列不能相同")
-    gi = idx(group_col) if group_col else -1
-
-    total = valid = invalid = 0
-    secs, groups = [], {}
-    for r in rows:
-        total += 1
-        sv = RT.parse_datetime(r[si] if si < len(r) else None)[0]
-        ev = RT.parse_datetime(r[ei] if ei < len(r) else None)[0]
-        if not sv or not ev:
-            invalid += 1
-            continue
-        d = (ev - sv).total_seconds()
-        if d < 0:
-            invalid += 1
-            continue
-        valid += 1
-        secs.append(d)
-        g = "未分组"
-        if gi >= 0 and gi < len(r) and r[gi] not in (None, ""):
-            g = str(r[gi])
-        groups.setdefault(g, []).append(d)
-
-    def pct(sorted_secs, p):
-        if not sorted_secs:
-            return None
-        k = min(len(sorted_secs) - 1, max(0, int(round(p * len(sorted_secs))) - 1))
-        return sorted_secs[k]
-
+def _tat_stats(secs, total):
+    """一组秒数 → 统计口径。与 tat_analyze 共用，保证两个指标算法一致。"""
+    if not secs:
+        return {"avg_h": None, "median_h": None, "p90_h": None,
+                "min_h": None, "max_h": None}
     ss = sorted(secs)
-    stats = {
-        "total": total,
-        "valid": valid,
-        "invalid": invalid,
-        "avg_h": round(sum(ss) / len(ss) / 3600, 2) if ss else None,
-        "median_h": round(pct(ss, 0.5) / 3600, 2) if ss else None,
-        "p90_h": round(pct(ss, 0.9) / 3600, 2) if ss else None,
-        "min_h": round(ss[0] / 3600, 2) if ss else None,
-        "max_h": round(ss[-1] / 3600, 2) if ss else None,
+
+    def pct(p):
+        k = min(len(ss) - 1, max(0, int(round(p * len(ss))) - 1))
+        return ss[k]
+
+    return {
+        "avg_h": round(sum(ss) / len(ss) / 3600, 2),
+        "median_h": round(pct(0.5) / 3600, 2),
+        "p90_h": round(pct(0.9) / 3600, 2),
+        "min_h": round(ss[0] / 3600, 2),
+        "max_h": round(ss[-1] / 3600, 2),
     }
 
-    # 时长分布（分桶边界：1h / 2h / 4h / 8h / 24h / 48h）
+
+def _tat_dist(secs, valid):
     edges = [60, 120, 240, 480, 1440, 2880]
     labels = ["<1小时", "1-2小时", "2-4小时", "4-8小时", "8-24小时", "1-2天", ">2天"]
     buckets = [0] * len(labels)
@@ -2211,25 +2593,324 @@ def tat_analyze(columns, rows, start_col, end_col, group_col=""):
                 break
         else:
             buckets[-1] += 1
-    dist = [
-        {"label": l, "count": c, "pct": round(c * 100.0 / valid, 1) if valid else 0}
-        for l, c in zip(labels, buckets)
-    ]
+    return [{"label": l, "count": c, "pct": round(c * 100.0 / valid, 1) if valid else 0}
+            for l, c in zip(labels, buckets)]
 
-    grp_out = []
-    for g, arr in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:30]:
+
+def _tat_groups(groups, limit=30):
+    out = []
+    for g, arr in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:limit]:
         a = sorted(arr)
-        grp_out.append({
-            "name": g,
-            "n": len(a),
+
+        def pct(p):
+            k = min(len(a) - 1, max(0, int(round(p * len(a))) - 1))
+            return a[k]
+
+        out.append({
+            "name": g, "n": len(a),
             "avg_h": round(sum(a) / len(a) / 3600, 2),
-            "median_h": round(pct(a, 0.5) / 3600, 2),
-            "p90_h": round(pct(a, 0.9) / 3600, 2),
+            "median_h": round(pct(0.5) / 3600, 2),
+            "p90_h": round(pct(0.9) / 3600, 2),
             "max_h": round(a[-1] / 3600, 2),
         })
+    return out
 
-    return {"ok": True, "start": start_col, "end": end_col, "group": group_col,
-            "stats": stats, "dist": dist, "groups": grp_out}
+
+def tat_analyze(columns, rows, start_col, end_col, group_col="", tot_start_col="",
+                stages=None, standards=None, specialty_col="", urgency_col=""):
+    """TAT 分析：**一次算出两个业务指标**（梦云 2026-10-19 定的口径）。
+
+    · TAT   = 审核时间 − 签收时间
+              标本到实验室、被接收签收，到结果审核发布的这一段。
+    · ToTAT = 审核时间 − 采样时间（采样没有就退回采集时间）
+              从患者采样算起，包含采样到送达实验室的**前段运输**。
+
+    两者共用同一个结束列（审核时间），区别只在起点，所以逐行分别算差值。
+    某行缺列/解析失败/结束早于起点 → 该指标记为无效，互不影响
+    （例如没有采样时间的行，TAT 照样算得出，只有 ToTAT 无效）。
+
+    start_col/end_col：兼容旧调用，传进来就当主指标。
+    tot_start_col：ToTAT 的起点列；不传则自动挑 采样时间 → 采集时间。
+
+    ★ v2.4.1（梦云 2026-10-26 加）：传了 stages 就额外算**分段**与标准判定。
+      stages = {"采集": 列名, "签收": ..., "核收": ..., "报告": ..., "审核": ...}
+      · 四个分段：采集-签收 / 签收-核收 / 核收-报告 / 报告-审核
+      · 实验室内 TAT = 签收 → 审核（三段之和）
+      · ToTAT       = 采集 → 审核（四段之和，含前段运输）
+      传 standards 时再按「专业 × 平诊/急诊」判定超标。
+    """
+    from . import report_templates as RT
+    from . import tat_rules as TR
+
+    cols = list(columns or [])
+    rows = list(rows or [])
+    total = len(rows)
+
+    def idx(name):
+        if not name:
+            return -1
+        try:
+            return cols.index(name)
+        except ValueError:
+            return -1
+
+    # ---- ToTAT 起点：优先采样时间，其次采集时间 ----
+    auto_tot = ""
+    for cand in ("采样时间", "采集时间"):
+        if cand in cols:
+            auto_tot = cand
+            break
+    tot_col = tot_start_col or auto_tot
+    si, ei, ti = idx(start_col), idx(end_col), idx(tot_col)
+    gi = idx(group_col) if group_col else -1
+
+    def dt(r, i):
+        if i < 0 or i >= len(r):
+            return None
+        return RT.parse_datetime(r[i])[0]
+
+    # ---------- 环节识别（用于分段与实验室内 TAT） ----------
+    detected = TR.detect_stages(cols)
+    stage_map: dict[str, str] = {}
+    if stages:
+        for key, col in (stages or {}).items():
+            if key in TR.STAGE_ORDER and col and col in cols:
+                stage_map[key] = col
+    else:
+        # 同一环节可能命中多列（如"采样时间"全空、"采集时间"有值）→ 取有数据的那列
+        stage_map = {}
+        for _st in TR.STAGE_ORDER:
+            _cands = detected["candidates"].get(_st) or []
+            if _cands:
+                stage_map[_st] = TR.pick_best_stage_column(cols, rows, _cands)
+    stage_idx = {k: idx(v) for k, v in stage_map.items() if v in cols}
+
+    # ★ 主指标**始终**是 start_col → end_col（旧行为不变）。
+    #   环节识别只用来加"分段"和"实验室内 TAT"，不替换用户选的主口径。
+    msi, mei = si, ei
+    if msi < 0 or mei < 0:
+        raise ValueError("请选择有效的审核时间与签收时间列")
+    if msi == mei:
+        raise ValueError("TAT 的开始与结束时间列不能相同")
+
+    # ---- 一次性收集所有需要的起点（一次遍历，别为每个分段各扫一遍） ----
+    #  ★ 每个指标是 (起点列, 终点列) 一对 —— 分段各有各的终点，
+    #    不能都拿主指标的终点（审核时间）来算。
+    starts: dict[str, tuple[int, int]] = {"main": (msi, mei)}
+    if ti >= 0 and ti != mei:
+        starts["tot"] = (ti, mei)
+    seg_names = []
+    for name, a, b in TR.SEGMENT_PAIRS:
+        ai, bi = stage_idx.get(a, -1), stage_idx.get(b, -1)
+        if ai >= 0 and bi >= 0 and ai != bi:
+            starts["seg:" + name] = (ai, bi)
+            seg_names.append((name, a, b, ai, bi))
+    # 实验室内 TAT：签收 → 审核（与主指标分开算）
+    lab_start = stage_idx.get("签收", -1)
+    lab_end = stage_idx.get("审核", -1)
+    if lab_start >= 0 and lab_end >= 0 and lab_start != lab_end:
+        starts["lab"] = (lab_start, lab_end)
+
+    def collect_all(start_indices):
+        """一次遍历算出多个 (起点,终点) 指标的时长。
+
+        同一行内同一列只解析一次时间（多个指标共用几列，别重复跑正则）。
+        """
+        out = {k: {"secs": [], "groups": {}, "valid": 0, "invalid": 0}
+               for k in start_indices}
+        if not out:
+            return out
+        for r in rows:
+            # 本行要解析的时间列（去重）
+            need = set()
+            for s_i, e_i in start_indices.values():
+                need.add(s_i)
+                need.add(e_i)
+            cache = {i: dt(r, i) for i in need}
+            g = "未分组"
+            if gi >= 0 and gi < len(r) and r[gi] not in (None, ""):
+                g = str(r[gi])
+            for name, (sidx, eidx) in start_indices.items():
+                bucket = out[name]
+                sv, ev = cache.get(sidx), cache.get(eidx)
+                if not sv or not ev:
+                    bucket["invalid"] += 1
+                    continue
+                d = (ev - sv).total_seconds()
+                if d < 0:
+                    bucket["invalid"] += 1
+                    continue
+                bucket["valid"] += 1
+                bucket["secs"].append(d)
+                bucket["groups"].setdefault(g, []).append(d)
+        return out
+
+    def pack(start_i, bucket, note=None, end_name=None):
+        out = {
+            "start": start_i >= 0 and cols[start_i] or "",
+            "end": end_name or (mei >= 0 and cols[mei] or ""),
+            "stats": dict({"total": total, "valid": bucket["valid"],
+                           "invalid": bucket["invalid"]},
+                          **_tat_stats(bucket["secs"], total)),
+            "dist": _tat_dist(bucket["secs"], bucket["valid"]),
+            "groups": _tat_groups(bucket["groups"]),
+        }
+        if note:
+            out["note"] = note
+        return out
+
+    buckets = collect_all(starts)
+    main_bucket = buckets["main"]
+    res = {
+        "ok": True,
+        "start": cols[msi], "end": cols[mei], "group": group_col,
+        "stats": dict({"total": total, "valid": main_bucket["valid"],
+                       "invalid": main_bucket["invalid"]},
+                      **_tat_stats(main_bucket["secs"], total)),
+        "dist": _tat_dist(main_bucket["secs"], main_bucket["valid"]),
+        "groups": _tat_groups(main_bucket["groups"]),
+        "stages": {"stages": stage_map, "missing": detected["missing"],
+                   "candidates": detected["candidates"]},
+        "segments": [],
+        "lab_tat": None,
+    }
+
+    # ---- 四个分段 ----
+    for name, a, b, ai, bi in seg_names:
+        key = "seg:" + name
+        bucket = buckets[key]
+        st = dict({"total": total, "valid": bucket["valid"],
+                   "invalid": bucket["invalid"]},
+                  **_tat_stats(bucket["secs"], total))
+        # ★ 有效样本太少 → 多半是这一环的时间列映射不对（或者时间顺序反了）
+        weak = ""
+        if total and bucket["valid"] < total * 0.5:
+            weak = ("这一环只有 %d/%d 行算得出（其余是时间缺失或前后颠倒）。"
+                    "多半是 LIS 整理时「%s / %s」映射到了不对的列，建议回去核对。"
+                    % (bucket["valid"], total, cols[ai], cols[bi]))
+        res["segments"].append({
+            "name": name,
+            "start": cols[ai], "end": cols[bi],
+            "stats": st,
+            "dist": _tat_dist(bucket["secs"], bucket["valid"]),
+            "groups": _tat_groups(bucket["groups"]),
+            "weak": weak,
+        })
+
+    # ---- 实验室内 TAT（签收 → 审核）----
+    if "lab" in buckets:
+        res["lab_tat"] = pack(lab_start, buckets["lab"],
+                              "实验室内 TAT ＝ 签收 → 审核（不含前段运输）",
+                              end_name=cols[lab_end])
+
+    # ---- ToTAT ----
+    if "tot" in buckets:
+        res["tot"] = pack(ti, buckets["tot"],
+                          "ToTAT 与 TAT 的样本数不同是正常的："
+                          "没采样/采集时间的行只能算 TAT，算不了 ToTAT。")
+    else:
+        res["tot"] = None
+        res["tot_note"] = ("表里找不到「采样时间」或「采集时间」，"
+                           "无法计算 ToTAT；只有 TAT 可算。")
+
+    # ---- 标准判定（专业 × 平诊/急诊）----
+    if standards:
+        target = (standards or {}).get("target") or "lab_tat"
+        if target == "lab_tat" and "lab" in buckets:
+            res["standard"] = _tat_standard_check(
+                cols, rows, stage_map, group_col, specialty_col, urgency_col,
+                standards, lab_start, lab_end, total)
+        else:
+            res["standard"] = _tat_standard_check(
+                cols, rows, stage_map, group_col, specialty_col, urgency_col,
+                standards, msi, mei, total)
+    return res
+
+
+def _tat_standard_check(cols, rows, stage_map, group_col, specialty_col,
+                         urgency_col, standards, start_i, end_i, total):
+    """按「专业 × 平诊/急诊」判定 TAT 是否超标。
+
+    专业的取法：专业列 → 分组/项目列（按关键词）→ 空
+    分诊的取法：就诊类型列（含"急诊"算急诊，其余算平诊）→ 未分诊
+    """
+    from . import report_templates as RT
+    from . import tat_rules as TR
+
+    def idx(name):
+        try:
+            return cols.index(name)
+        except (ValueError, TypeError):
+            return -1
+
+    spec_col = specialty_col or TR.detect_column(cols, TR.SPECIALTY_COL_CANDIDATES)
+    urg_col = urgency_col or TR.detect_column(cols, TR.URGENCY_COL_CANDIDATES)
+    # 专业判定用的文本列：优先专业列，其次分组列，最后项目名
+    text_col = spec_col
+    if idx(text_col) < 0:
+        text_col = group_col or TR.detect_column(cols, TR.GROUP_COL_CANDIDATES)
+    si, ei, ti_, gi = idx(spec_col), idx(urg_col), idx(text_col), idx(group_col)
+
+    limits = (standards or {}).get("limits") or {}
+    target = (standards or {}).get("target") or "lab_tat"
+    # 判定对象：实验室内 TAT（签收→审核）或 ToTAT（采集→审核）
+    if target == "tot":
+        tot_start = stage_map.get("采集") or ""
+        ts_i = idx(tot_start)
+        if ts_i < 0:
+            for cand in ("采样时间", "采集时间"):
+                if cand in cols:
+                    ts_i = idx(cand)
+                    break
+        if ts_i < 0:
+            return {"error": "表里找不到「采样时间」或「采集时间」，无法按 ToTAT 判定"}
+    else:
+        ts_i = start_i
+
+    buckets: dict[tuple[str, str], list[float]] = {}
+    for r in rows:
+        def parse(i):
+            if i < 0 or i >= len(r):
+                return None
+            return RT.parse_datetime(r[i])[0]
+        sv, ev = parse(ts_i), parse(end_i)
+        if not sv or not ev:
+            continue
+        d = (ev - sv).total_seconds()
+        if d < 0:
+            continue
+        # 专业：专业列的值本身就是"生化/免疫/…"时直接用；否则按关键词归类
+        spec = ""
+        if si >= 0 and si < len(r) and r[si] not in (None, ""):
+            raw = str(r[si]).strip()
+            spec = raw if raw in TR.STANDARD_SPECIALTIES else TR.classify_specialty(raw)
+        elif ti_ >= 0 and ti_ < len(r) and r[ti_] not in (None, ""):
+            spec = TR.classify_specialty(r[ti_])
+        if not spec and gi >= 0 and gi < len(r) and r[gi] not in (None, ""):
+            spec = TR.classify_specialty(r[gi])
+        # 分诊
+        urg = "未分诊"
+        if ei >= 0 and ei < len(r) and r[ei] not in (None, ""):
+            urg = TR.classify_urgency(r[ei])
+        buckets.setdefault((spec, urg), []).append(d / 3600.0)
+
+    out = TR.evaluate_buckets(buckets, standards, target)
+    out["dims"] = {"specialty_col": cols[si] if si >= 0 else "",
+                   "urgency_col": cols[ei] if ei >= 0 else "",
+                   "text_col": cols[ti_] if ti_ >= 0 else ""}
+    notes = []
+    if ei < 0:
+        notes.append("表里没有「就诊类型」这一列，无法区分平诊/急诊，"
+                     "所有样本都记为「未分诊」（不参与平诊/急诊的判定）。"
+                     "LIS 整理时把源表的「就诊类型」映射到标准字段即可。")
+    if si < 0:
+        notes.append("表里没有「专业」列：专业改由分组/项目名按关键词推断，"
+                     "归不上的会列在「未判定」里。"
+                     "要让专业判定准，先用「LIS 数据整理」把这张源表标准化"
+                     "（会自动按试剂分类表填好专业与组套），再导进来做 TAT 分析。")
+    if notes:
+        out["note"] = "　".join(notes)
+    return out
 
 
 def load_persisted_results():
@@ -3631,6 +4312,10 @@ def raw_edit_save(dataset_id, sheet="", backup=True):
             raise ValueError("写入失败，原始文件未被改动：%s" % e)
 
         # ---- 3) 原子替换 ----
+        # ★ 替换前必须再关一次 workbook：上面 cached_raw 重新读了一遍，
+        #   又把 zip 句柄占上了。Windows 上文件被占着 os.replace 会报
+        #   [WinError 5] 拒绝访问。
+        _close_workbooks(dst)
         try:
             os.replace(tmp, dst)
         except Exception as e:
@@ -3833,11 +4518,15 @@ def _sha256(path):
 
 
 def _purge_raw_cache(path):
-    """把某个文件在 _raw_cache / _merge_cache 里的全部条目清掉。
+    """把某个文件在 _raw_cache / _merge_cache 里的全部条目清掉，并关掉它的 workbook。
 
     这两个缓存是 `(path, sheet, mtime)` 三重键。回写前后 mtime 会变，
     理论上旧键不会再命中；但"删子表"这类改动不落盘、mtime 也不变，
-    所以我们宁愿显式清一遍 —— 这条函数只做一件事，别往里加逻辑。
+    所以我们宁愿显式清一遍。
+
+    ★ 连 workbook 一起关：read_only 模式会一直占着 zip 的文件句柄，
+      Windows 上文件被占着就没法 os.replace 覆盖原文件
+      （会报 [WinError 5] 拒绝访问）。这条只做"清缓存"，别往里加别的逻辑。
     """
     for k in list(_raw_cache):
         if k[0] == path:
@@ -3845,6 +4534,23 @@ def _purge_raw_cache(path):
     for k in list(_merge_cache):
         if k[0] == path:
             _merge_cache.pop(k, None)
+    _close_workbooks(path)
+
+
+def _close_workbooks(path=None):
+    """关掉缓存的 openpyxl workbook（必要时只关某个文件的）。
+
+    ★ 必须有关闭这一步：read_only 模式会一直占着 zip 的文件句柄，
+      而 Windows 上"文件被打开时不能替换" —— 回写原文件会直接
+      报 [WinError 5] 拒绝访问。
+    """
+    for key in list(_wb_cache.keys()):
+        if path is not None and key[0] != path:
+            continue
+        try:
+            _wb_cache.pop(key).close()
+        except Exception:
+            pass
 
 
 def _write_book_to_path(book, path):
@@ -4621,6 +5327,9 @@ class Handler(BaseHTTPRequestHandler):
                 page = _large_page(ds, sh, offset, size)
                 total = sh.get("rows") or 0
                 return self._json({
+                    # ★ 必须带 ok：前端的 api() 用 `if (!j.ok) throw` 判成败，
+                    #   少了它就会报"请求失败（HTTP 200）"——HTTP 明明是 200。
+                    "ok": True,
                     "rows": page, "sheets": [s["name"] for s in ds.get("sheets", [])],
                     "sheet": sn, "offset": offset, "size": size,
                     "total": total, "cols": len(sh.get("columns") or []),
@@ -4728,14 +5437,24 @@ class Handler(BaseHTTPRequestHandler):
                         errors.append({"file": pth, "error": "文件夹里没有 .xls/.xlsx/.xlsm/.csv 文件"})
                     for f in files:
                         try:
-                            added.append(ds_summary(import_file(f, lab=b.get("lab") or "",
-                                                                table_type=b.get("table_type") or "")))
+                            _ds = import_file(f, lab=b.get("lab") or "",
+                                             table_type=b.get("table_type") or "")
+                            added.append(ds_summary(_ds))
+                            for _sh in _ds.get("sheets") or []:
+                                if _sh.get("error"):
+                                    errors.append({"file": "%s / %s" % (f, _sh.get("name") or "?"),
+                                                   "error": str(_sh.get("error"))})
                         except Exception as e:
                             errors.append({"file": f, "error": str(e)})
                 else:
                     try:
-                        added.append(ds_summary(import_file(pth, lab=b.get("lab") or "",
-                                                            table_type=b.get("table_type") or "")))
+                        _ds = import_file(pth, lab=b.get("lab") or "",
+                                          table_type=b.get("table_type") or "")
+                        added.append(ds_summary(_ds))
+                        for _sh in _ds.get("sheets") or []:
+                            if _sh.get("error"):
+                                errors.append({"file": "%s / %s" % (pth, _sh.get("name") or "?"),
+                                               "error": str(_sh.get("error"))})
                     except Exception as e:
                         errors.append({"file": pth, "error": str(e)})
             save_state()
@@ -4808,6 +5527,14 @@ class Handler(BaseHTTPRequestHandler):
                             try:
                                 ds = import_file(tmp, display_name=name)
                                 added.append(ds_summary(ds))
+                                # ★ 子表解析失败也要报出来 —— 否则整个文件显示"导入成功"，
+                                #   但里面有几张表其实是空的，用户完全不知情。
+                                for _sh in ds.get("sheets") or []:
+                                    if _sh.get("error"):
+                                        errors.append({
+                                            "file": "%s / %s" % (name, _sh.get("name") or "?"),
+                                            "error": str(_sh.get("error")),
+                                        })
                             finally:
                                 try:
                                     os.remove(tmp)
@@ -4834,6 +5561,12 @@ class Handler(BaseHTTPRequestHandler):
                         ds = import_file(tmp, lab=b.get("lab") or "",
                                          table_type=b.get("table_type") or "", display_name=name)
                         added.append(ds_summary(ds))
+                        for _sh in ds.get("sheets") or []:
+                            if _sh.get("error"):
+                                errors.append({
+                                    "file": "%s / %s" % (name, _sh.get("name") or "?"),
+                                    "error": str(_sh.get("error")),
+                                })
                     finally:
                         try:
                             os.remove(tmp)
@@ -4887,37 +5620,25 @@ class Handler(BaseHTTPRequestHandler):
             ids = b.get("ids") or [b.get("id")]
             ids = [i for i in ids if i]
             removed = []
+            not_deleted = []
             for i in ids:
                 ds = next((d for d in STATE["datasets"] if d["id"] == i), None)
                 if not ds:
                     continue
-                try:
-                    fp = ds_abs_path(ds)
-                    if os.path.isfile(fp):
-                        os.remove(fp)
-                except Exception as e:
-                    print("删除文件失败：", e)
-                # ★ 大表模式：连专属 SQLite 一起删
-                try:
-                    dbp = _ds_db_path(ds, (ds.get("sheets") or [{}])[0])
-                    if ds.get("large") and os.path.isfile(dbp):
-                        os.remove(dbp)
-                except Exception as e:
-                    print("删除大表数据库失败：", e)
+                # ★ 源文件副本 + 每个大表的 SQLite 一起删（统一走公共函数）
+                not_deleted.extend(purge_dataset_files(ds) or [])
                 STATE["datasets"].remove(ds)
                 removed.append(i)
             _cache.clear()
             save_state()
-            return self._json({"ok": True, "removed": removed})
+            return self._json({"ok": True, "removed": removed,
+                               "not_deleted": not_deleted})
 
         if p == "/api/dataset/clear":
+            # ★ 清空全部：源文件副本和大表 SQLite 都要删。
+            #   以前只删源文件 → 几百 MB 的大表库全成孤儿白占磁盘。
             for ds in list(STATE["datasets"]):
-                try:
-                    fp = ds_abs_path(ds)
-                    if os.path.isfile(fp):
-                        os.remove(fp)
-                except Exception:
-                    pass
+                purge_dataset_files(ds)
             STATE["datasets"] = []
             _cache.clear()
             save_state()
@@ -5190,9 +5911,55 @@ class Handler(BaseHTTPRequestHandler):
             res = get_result(b.get("result_id") or "")
             if not res:
                 raise ValueError("结果不存在或已过期，请先生成或选择一个分析结果")
+            standards = None
+            if b.get("use_standard"):
+                from . import tat_rules as TR
+                standards = TR.load_standards(LIB_DIR)
             return self._json(tat_analyze(
                 res["columns"], res["rows"],
-                b.get("start") or "", b.get("end") or "", b.get("group") or ""))
+                b.get("start") or "", b.get("end") or "", b.get("group") or "",
+                b.get("tot_start") or "", b.get("stages") or None,
+                standards, b.get("specialty_col") or "", b.get("urgency_col") or ""))
+
+        if p == "/api/tat/detect":
+            """识别这张结果里各环节对应哪一列（前端用来显示"本次用到的字段"）。"""
+            res = get_result(b.get("result_id") or "")
+            if not res:
+                raise ValueError("结果不存在或已过期，请先生成或选择一个分析结果")
+            from . import tat_rules as TR
+            detected = TR.detect_stages(res["columns"])
+            # ★ 同一环节命中多列时取**有数据**的那列（如"采样时间"全空、"采集时间"有值）
+            best = {}
+            for stage in TR.STAGE_ORDER:
+                cands = detected["candidates"].get(stage) or []
+                if cands:
+                    best[stage] = TR.pick_best_stage_column(
+                        res["columns"], res["rows"], cands)
+            detected["stages"] = best
+            detected["missing"] = [s for s in TR.STAGE_ORDER if s not in best]
+            detected["specialty_col"] = TR.detect_column(
+                res["columns"], TR.SPECIALTY_COL_CANDIDATES)
+            detected["urgency_col"] = TR.detect_column(
+                res["columns"], TR.URGENCY_COL_CANDIDATES)
+            detected["group_col"] = TR.detect_column(
+                res["columns"], TR.GROUP_COL_CANDIDATES)
+            detected["specialties"] = list(TR.STANDARD_SPECIALTIES)
+            detected["ok"] = True      # ★ 必须带 ok：前端 api() 用它判成败
+            return self._json(detected)
+
+        if p == "/api/tat/standards":
+            """实验室 TAT 标准：按 生化/免疫/血常规/凝血 × 平诊/急诊。"""
+            from . import tat_rules as TR
+            # ★ 两种传法都认：{save, payload:{...}} 或 {save, limits:{...}, target}
+            #   （写错一种就把所有标准静默清空了，必须两种都支持）
+            body = b.get("payload") if isinstance(b.get("payload"), dict) else b
+            if b.get("save"):
+                data = TR.save_standards(LIB_DIR, body)
+            else:
+                data = TR.load_standards(LIB_DIR)
+            # 出厂默认另带一份，前端「恢复默认」按钮直接填，不用前端硬编码
+            data["defaults"] = TR.default_standards()["limits"]
+            return self._json({"ok": True, "standards": data})
 
         if p == "/api/raw_edit/preview":
             # 提交改动后拿最新预览（不用再拼一堆查询参数）

@@ -26,7 +26,14 @@ def test_start_bat_is_pure_ascii_and_thin():
     assert "chcp 65001" in text
     assert 'set "ROOT=%~dp0"' not in text  # 只用 cd /d，不重复展开
     assert 'cd /d "%~dp0"' in text
-    assert 'set "PYTHON_EXE=C:\\Users\\98319\\.workbuddy\\binaries\\python\\envs\\smartlabhub\\Scripts\\python.exe"' in text
+    # ★ 不能再写死某台机器的 Python 路径：
+    #   整个目录打包给同事后，那个路径在别人机器上必然不存在，
+    #   脚本会直接报「未安装 Python」，而同事其实装了。
+    #   现在改为探测：SLH_PYTHON > py -3 > PATH > 常见安装目录。
+    assert 'set "PYTHON_EXE=C:\\Users\\98319' not in text
+    assert "py -3" in text, "必须尝试 Windows Python Launcher"
+    assert "where python" in text, "必须尝试 PATH 上的 python"
+    assert "SLH_PYTHON" in text, "必须支持手动指定解释器"
     assert '"%PYTHON_EXE%" "%LAUNCHER%" %*' in text
     assert len(raw) < 1600, "启动平台.bat 不应承载复杂逻辑"
 
@@ -50,12 +57,60 @@ def test_bats_do_not_contain_mojibake_or_old_paths():
         assert "npm run dev" not in text
 
 
+def test_runtime_probe_exists_and_never_hardcodes_a_machine():
+    """探测逻辑集中在 runtime_probe，且不能写死任何机器的绝对路径。"""
+    probe = ROOT / "platform" / "tools" / "runtime_probe.py"
+    assert probe.is_file(), "missing runtime_probe.py"
+    text = probe.read_text(encoding="utf-8")
+    assert "98319" not in text, "不能写死开发机的路径"
+    assert ".workbuddy" not in text, "不能写死开发机的运行时路径"
+    for marker in ("detect_python", "detect_node", "py -3", "WindowsApps"):
+        assert marker in text, f"runtime_probe 缺少 {marker}"
+
+
+def test_release_bat_is_ascii_and_thin():
+    """给同事的发布版启动器：纯 ASCII、CRLF、极薄。"""
+    release = ROOT / "启动平台-发布版.bat"
+    assert release.is_file(), "missing 启动平台-发布版.bat"
+    raw = release.read_bytes()
+    assert all(byte < 128 for byte in raw), "发布版批处理必须保持纯 ASCII"
+    assert b"\r\n" in raw, "必须用 CRLF 行尾"
+    text = raw.decode("ascii")
+    assert "--release" in text, "发布版必须走 release 模式"
+    assert "backend\\.venv" not in text
+    assert len(raw) < 1600, "批处理不应承载复杂逻辑"
+
+
+def test_runtime_probe_exists_and_never_hardcodes_a_machine():
+    """探测逻辑集中在 runtime_probe，且不能写死任何机器的绝对路径。"""
+    probe = ROOT / "platform" / "tools" / "runtime_probe.py"
+    assert probe.is_file(), "missing runtime_probe.py"
+    text = probe.read_text(encoding="utf-8")
+    assert "98319" not in text, "不能写死开发机的路径"
+    assert ".workbuddy" not in text, "不能写死开发机的运行时路径"
+    for marker in ("detect_python", "detect_node", "py -3", "WindowsApps"):
+        assert marker in text, f"runtime_probe 缺少 {marker}"
+
+
+def test_release_bat_is_ascii_and_thin():
+    """给同事的发布版启动器：纯 ASCII、CRLF、极薄。"""
+    release = ROOT / "启动平台-发布版.bat"
+    assert release.is_file(), "missing 启动平台-发布版.bat"
+    raw = release.read_bytes()
+    assert all(byte < 128 for byte in raw), "发布版批处理必须保持纯 ASCII"
+    assert bytes([13, 10]) in raw, "必须用 CRLF 行尾"
+    text = raw.decode("ascii")
+    assert "--release" in text, "发布版必须走 release 模式"
+    assert "backend\\.venv" not in text
+    assert len(raw) < 1600, "批处理不应承载复杂逻辑"
+
+
 def test_launcher_defines_required_steps():
     text = LAUNCHER.read_text(encoding="utf-8")
     assert "def backend_ready()" in text
     assert "def frontend_ready()" in text
     assert "def embed_ready()" in text
-    assert "def preflight()" in text
+    assert "def preflight(" in text
     assert "--strictPort" in text
     assert 'def spawn(' in text
     assert "PROXY" in text, "必须绕过本机代理访问 localhost"
@@ -63,6 +118,8 @@ def test_launcher_defines_required_steps():
     assert '"--timeout"' in text
     assert "webbrowser.open" in text
     assert "backend.log" not in text or "backend.log" in text
+    assert "def bootstrap_dependencies(" in text, "依赖自举必须放在 Python 侧"
+    assert "def bootstrap_dependencies(" in text, "依赖自举必须放在 Python 侧"
 
 
 def test_launcher_content_checks_are_not_status_only():

@@ -28,7 +28,7 @@
 }
 
 body {
-  font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

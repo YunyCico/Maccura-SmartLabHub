@@ -2,6 +2,25 @@
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 
+/* ---------------- 暂时隐藏的板块 ----------------
+   2026-10-27：应要求先把「AI 助手」藏起来（后续重新规划），
+   **代码和页面都完整保留，没有删除**，只是不再出现在左侧菜单、
+   也不能通过地址或脚本切进去。
+
+   恢复方法：把下面数组清空（改成 `new Set()`）即可。
+   需要连文档一起恢复时，再看 help.html 里标了「暂时隐藏」的两处。 */
+const HIDDEN_PAGES = new Set(['ai']);
+
+function applyHiddenPages() {
+  HIDDEN_PAGES.forEach(key => {
+    // 从菜单里摘掉（不是 display:none —— 菜单支持拖动排序，留空壳会留个空档）
+    $$(`.nav a[data-key="${key}"]`).forEach(el => el.remove());
+    // 页面本身留着（里面的按钮事件照常绑定），只是不允许成为当前页
+    const section = document.getElementById('page-' + key);
+    if (section) section.classList.remove('active');
+  });
+}
+
 const S = {
   datasets: [], fields: [], config: {}, baseDir: '', outDir: '', appVersion: '',
   picked: new Set(),          // "dsId||sheetName"
@@ -501,8 +520,15 @@ $('#src-table').addEventListener('click', async e => {
   if (dbtn) {
     const ds = S.datasets.find(d => d.id === dbtn.dataset.id);
     if (!confirm(`确定删除「${ds.name}」吗？\n程序内保存的那份文件也会一起删掉（不会动你原来的文件）。`)) return;
-    await api('/api/dataset/delete', { ids: [dbtn.dataset.id] });
-    toast('已删除', 'ok'); await loadAll(); return;
+    const r = await api('/api/dataset/delete', { ids: [dbtn.dataset.id] });
+    // ★ 有文件没删掉（多半正被 Excel 打开）要明确告诉用户，不能让他以为删干净了
+    if (r && r.not_deleted && r.not_deleted.length) {
+      toast('已删除数据表，但这些文件还删不掉（可能正被 Excel 打开）：'
+        + r.not_deleted.join('、'), 'err');
+    } else {
+      toast('已删除', 'ok');
+    }
+    await loadAll(); return;
   }
   const vbtn = e.target.closest('.act-detail');
   if (vbtn) return showDetail(vbtn.dataset.id);
@@ -516,8 +542,14 @@ async function bulkDelete() {
   const ids = $$('.src-check').filter(c => c.checked).map(c => c.dataset.id);
   if (!ids.length) return toast('先勾选要删除的表', 'err');
   if (!confirm(`确定删除选中的 ${ids.length} 个数据表吗？`)) return;
-  await api('/api/dataset/delete', { ids });
-  toast('已删除 ' + ids.length + ' 个', 'ok'); $('#src-all').checked = false; await loadAll();
+  const r = await api('/api/dataset/delete', { ids });
+  if (r && r.not_deleted && r.not_deleted.length) {
+    toast('已删除数据表，但这些文件还删不掉（可能正被 Excel 打开）：'
+      + r.not_deleted.join('、'), 'err');
+  } else {
+    toast('已删除 ' + ids.length + ' 个', 'ok');
+  }
+  $('#src-all').checked = false; await loadAll();
 }
 async function bulkSet(key) {
   const ids = $$('.src-check').filter(c => c.checked).map(c => c.dataset.id);
@@ -1293,15 +1325,17 @@ function setupImport() {
 }
 async function uploadFiles(files) {
   if (!files.length) return;
-  // 预检：超大文件允许导入（走流式大表模式），但提前说明耗时
-  const big = files.filter(f => f.size > 100 * 1024 * 1024);
+  // 预检：文件较大时导入需要几分钟（引擎会按「这张表实际有多少数据」
+  // 自动决定走流式导入，不会整表塞进内存）
+  const big = files.filter(f => f.size > 20 * 1024 * 1024);
   if (big.length) {
-    toast(`大文件（${big.map(f => f.name).join('、')}）将走流式导入，可能需要几分钟，请勿关闭页面`, 'ok');
+    toast(`大文件（${big.map(f => f.name).join('、')}）正在流式导入，可能需要几分钟，请勿关闭页面`, 'ok');
   }
   const btn = $('#btn-choose');
   btn.innerHTML = '<span class="spin"></span>导入中…';
   btn.disabled = true;
   const okList = [], badList = [];
+  const t0 = Date.now();
   // ★ 逐个文件用 FormData 原样直传（不走 base64）：
   //   大文件 base64 + 字符串拼接会卡死页面；逐个传还让每个文件都有独立进度。
   for (let i = 0; i < files.length; i++) {
@@ -1322,8 +1356,19 @@ async function uploadFiles(files) {
       console.error('导入失败', f.name, e);
     }
   }
-  toast(`导入完成：成功 ${okList.length} 个${badList.length ? '，失败 ' + badList.length + ' 个' : ''}`, badList.length ? 'err' : 'ok');
-  if (badList.length) console.warn('导入失败明细', badList);
+  const secs = Math.round((Date.now() - t0) / 1000);
+  toast(`导入完成：成功 ${okList.length} 个${badList.length ? '，失败 ' + badList.length + ' 个' : ''}（耗时 ${secs} 秒）`, badList.length ? 'err' : 'ok');
+  if (badList.length) {
+    console.warn('导入失败明细', badList);
+    // ★ 失败原因必须让人看见 —— 以前只写进控制台，用户界面上只看到
+    //   "失败 1 个"，完全不知道到底为什么，只能一次次重试。
+    const lines = badList.map(x =>
+      '· ' + (x.file || x.filename || x.path || '未知文件') + '：' + (x.error || '未知原因')
+    ).join('\n');
+    showError('以下文件没导进去：\n' + lines
+      + '\n\n常见原因：文件正被 Excel 占用、文件有密码、扩展名和真实格式对不上、'
+      + '或文件太大导致内存不够。修好后再导一次就行，已经导成功的表不受影响。');
+  }
   btn.innerHTML = '选择文件导入';
   btn.disabled = false;
   if (okList.length) await loadAll();
@@ -2635,6 +2680,209 @@ async function applyPickedResult(rid) {
 /* ★ 数据分析页：TAT 与设备负载分别维护数据表选择和汇总结果，互不复用。 */
 if (!S.tatDs) S.tatDs = new Set();
 if (!S.rpDs) S.rpDs = new Set();
+
+/* ---------------- 字段核验 ----------------
+   目的：让用户在勾选数据表**之前**就知道"这张表能不能算"。
+   以前只能生成数据后到参数栏试，选错了才发现列不对，白跑一轮。
+
+   核验规则按分析类型定义（见 ANALYSIS_REQ）：
+     TAT       —— 必须有时间/日期列才能算「结束−开始」；再细分成
+                  采集/采样、签收/接收、核收、报告/完成、审核 五类环节列，
+                  标出能凑出哪几步，凑不齐的明确写缺哪类。
+     设备负载  —— 至少要有一个设备/仪器维度列 + 一个可度量列（数量/次数/时间）。 */
+const ANALYSIS_REQ = {
+  tat: {
+    label: 'TAT',
+    // 环节列的关键词（用于判断能否覆盖某个时间段）
+    stages: [
+      { key: '采集', kws: ['采集', '采样', '采样时间'] },
+      { key: '签收', kws: ['签收', '接收', '收样'] },
+      { key: '核收', kws: ['核收', '上机', '离心'] },
+      { key: '报告', kws: ['报告', '检测完成', '完成时间', '回报'] },
+      { key: '审核', kws: ['审核', '审校', '签发'] },
+    ],
+    timeHint: '时间/日期列',
+    /* 需求清单：直接把「计算时要用到的字段」和「你的表里常见的列名写法」摊开，
+       不再用「开始时间列」这种抽象说法 —— 用户要照着去核对具体列名。 */
+    needs: [
+      {
+        must: true, name: '签收时间',
+        eg: ['签收时间', '收样时间', '接收时间', '接收'],
+        desc: 'TAT 的起点。TAT = 审核时间 − 签收时间',
+        kws: ['签收', '收样', '接收'],
+      },
+      {
+        must: true, name: '审核时间',
+        eg: ['审核时间', '报告审核时间', '审核时刻'],
+        desc: 'TAT 与 ToTAT 共用的终点',
+        kws: ['审核', '签发'],
+      },
+      {
+        must: true, name: '采样时间',
+        eg: ['采样时间', '采集时间', '标本采集时间'],
+        desc: 'ToTAT 的起点。ToTAT = 审核时间 − 采样时间（含前段运输）',
+        kws: ['采样', '采集'],
+      },
+      {
+        must: false, name: '分组字段',
+        eg: ['模块', '检验大组', '科室', '仪器'],
+        desc: '按它分组统计各组周转时长，不选则只算总体',
+        kws: ['模块', '大组', '科室', '仪器', '设备', '组别'],
+      },
+    ],
+  },
+  rp: {
+    label: '设备负载',
+    devKws: ['设备', '仪器', '装置', '机台', '分析仪', '工作台', '系统编号', '仪器编号', '设备编号'],
+    metricKws: ['数量', '次数', '检测', '样本', '工作量', '时长', '时间', '条数', '项目'],
+    timeHint: '检测时间 + 模块 + 项目名称',
+    /* 与 report_templates.py 的 TEMPLATE_FIELDS["equip_load"] 一致：
+       build_equip_load() 真正读取的就是 time / module / project 三列。 */
+    needs: [
+      {
+        must: true, name: '检测时间',
+        eg: ['检测完成时间', '完成时间', '出结果时间', '上机时间', '到单时间'],
+        desc: '算每个时段涌进多少活儿、堵点在哪',
+        kws: ['检测完成', '完成时间', '出结果时间', '上机时间', '到单时间', '时间', '日期'],
+      },
+      {
+        must: true, name: '模块',
+        eg: ['模块', '模块名称', '仪器', '仪器名称', '设备名称'],
+        desc: '区分是哪个模块在跑，定位谁满转谁闲着',
+        kws: ['模块', '仪器', '设备', '机台'],
+      },
+      {
+        must: true, name: '项目名称',
+        eg: ['项目名称', '检测项目', '检验项目', '项目'],
+        desc: '看项目在模块上的分配均不均，区分根因',
+        kws: ['项目名称', '检测项目', '检验项目', '项目'],
+      },
+    ],
+  },
+};
+const TIME_RE = /时间|日期|时点/;
+
+function dsColumns(d) {
+  // 合并一张表所有工作表的列名（去重）—— 核验看的是"有没有"，不看在哪个 sheet
+  const out = [];
+  (d.sheets || []).forEach(s => (s.columns || []).forEach(c => { if (c && out.indexOf(c) < 0) out.push(c); }));
+  return out;
+}
+
+function verifyDataset(prefix, d) {
+  const req = ANALYSIS_REQ[prefix];
+  const cols = dsColumns(d);
+  if (!req) return { level: 'none', badge: '', detail: '' };
+  if (!cols.length) {
+    return { level: 'bad', badge: '无字段', detail: '这张表没识别出任何字段，无法分析。' };
+  }
+
+  if (prefix === 'tat') {
+    const times = cols.filter(c => TIME_RE.test(c));
+    const hitStages = req.stages
+      .map(st => ({ name: st.key, hit: times.filter(c => st.kws.some(k => c.includes(k))) }))
+      .filter(x => x.hit.length);
+    if (!times.length) {
+      return {
+        level: 'bad', badge: '缺时间列',
+        detail: 'TAT 要算「结束时间 − 开始时间」，但这张表没有任何时间/日期列，无法计算。',
+      };
+    }
+    if (!hitStages.length) {
+      return {
+        level: 'warn', badge: `有${times.length}个时间列`,
+        detail: `有时间列（${times.slice(0, 4).join('、')}${times.length > 4 ? '…' : ''}），但都不是采集/签收/核收/报告/审核这些环节列。\n仍可手动指定开始与结束列，但请确认这两个列确实是时间。`,
+      };
+    }
+    const names = hitStages.map(x => x.name).join('→');
+    return {
+      level: hitStages.length >= 2 ? 'ok' : 'warn',
+      badge: `${hitStages.length}个环节`,
+      detail: `可覆盖环节：${names}\n匹配到的列：\n` + hitStages.map(x => `  ${x.name}：${x.hit.slice(0, 3).join('、')}`).join('\n')
+        + (hitStages.length < 2 ? '\n只匹配到 1 个环节，算不出「两个时间点之间的周转」。' : ''),
+    };
+  }
+
+  // 设备负载
+  const dev = cols.filter(c => req.devKws.some(k => c.includes(k)));
+  const met = cols.filter(c => req.metricKws.some(k => c.includes(k)));
+  if (!dev.length) {
+    return { level: 'bad', badge: '缺设备列', detail: `设备负载需要能区分设备的维度列（如设备名称、仪器编号），这张表没有。\n现有列：${cols.slice(0, 6).join('、')}${cols.length > 6 ? '…' : ''}` };
+  }
+  if (!met.length) {
+    return { level: 'warn', badge: '缺度量列', detail: `找到设备列（${dev.slice(0, 3).join('、')}），但没找到可度量的列（数量/次数/工作量等），只能按条数统计。` };
+  }
+  return {
+    level: 'ok', badge: '字段齐全',
+    detail: `设备列：${dev.slice(0, 3).join('、')}\n度量列：${met.slice(0, 3).join('、')}`,
+  };
+}
+
+/* ---------------- 「需要字段」常显清单 ----------------
+   直接摊开**计算时真正要读的字段**，并给出常见列名写法，
+   让人照着核对，不用去理解"开始时间列"这种抽象说法。 */
+function reqHitCols(prefix, need, pickedDatasets) {
+  const out = [];
+  pickedDatasets.forEach(d => dsColumns(d).forEach(c => {
+    if (need.kws.some(k => c.includes(k)) && out.indexOf(c) < 0) out.push(c);
+  }));
+  return out;
+}
+
+function renderReqPanel(prefix) {
+  const box = $('#' + prefix + '-req'); if (!box) return;
+  const req = ANALYSIS_REQ[prefix]; if (!req) return;
+  const state = prefix === 'tat' ? S.tatDs : S.rpDs;
+  const picked = (S.datasets || []).filter(d => state.has(d.id));
+  const has = picked.length > 0;
+
+  const cards = req.needs.map(n => {
+    let cls = 'req-card', mark = '', hitHtml = '', tip = n.desc;
+    if (has) {
+      const hits = reqHitCols(prefix, n, picked);
+      if (n.must) {
+        cls += hits.length ? ' ok' : ' no';
+        mark = hits.length ? '✓' : '✕';
+      } else {
+        cls += ' opt' + (hits.length ? ' hit' : '');
+        mark = hits.length ? '✓' : '';
+      }
+      if (hits.length) {
+        hitHtml = '<div class="req-hit">' + esc(hits.slice(0, 3).join('、'))
+          + (hits.length > 3 ? ' 等 ' + hits.length + ' 个' : '') + '</div>';
+        tip = '你的表里命中：' + hits.slice(0, 6).join('、');
+      } else if (n.must) {
+        hitHtml = '<div class="req-hit miss">没找到</div>';
+        tip = '勾选的表里没有能当「' + n.name + '」用的列';
+      }
+    } else {
+      cls += n.must ? ' must' : ' opt';
+    }
+    const eg = (n.eg || []).map(e => '<span class="req-eg">' + esc(e) + '</span>').join('');
+    return '<div class="' + cls + '" title="' + esc(tip).replace(/"/g, '&quot;') + '">'
+      + '<div class="req-h"><span class="req-nm">' + esc(n.name) + '</span>'
+      + (mark ? '<b class="req-mk">' + mark + '</b>' : '') + '</div>'
+      + '<div class="req-egs">' + eg + '</div>' + hitHtml + '</div>';
+  }).join('');
+
+  const must = req.needs.filter(n => n.must);
+  let sum;
+  if (has) {
+    const ok = must.filter(n => reqHitCols(prefix, n, picked).length).length;
+    sum = '<span class="req-sum' + (ok === must.length ? ' all' : '') + '">' + ok + '/' + must.length + '</span>';
+  } else {
+    sum = '<span class="req-sum">' + must.length + ' 项必需</span>';
+  }
+
+  box.innerHTML = '<div class="req-inline"><span class="req-label">计算需要这些字段</span>'
+    + cards + sum + '</div>';
+}
+
+function setupReqPanels() { /* 常显，无需事件绑定，保留占位以免调用报错 */ }
+
+/* 勾选变化后同步刷新需求面板 —— 让"缺哪项"跟着勾选实时变 */
+function refreshReqPanels() { renderReqPanel('tat'); renderReqPanel('rp'); }
+
 function analysisDsVisible(prefix) {
   const kw = ($('#' + prefix + '-ds-kw') ? $('#' + prefix + '-ds-kw').value : '').trim().toLowerCase();
   let list = S.datasets || [];
@@ -2646,16 +2894,23 @@ function renderAnalysisDatasets(prefix, state, label) {
   if (!S.datasets.length) { box.innerHTML = '<div class="empty sm">还没有数据表，可先在上方导入</div>'; return; }
   const list = analysisDsVisible(prefix);
   if (!list.length) { box.innerHTML = '<div class="empty sm">没有匹配的数据表</div>'; return; }
-  box.innerHTML = list.map(d => `<label class="pick" style="cursor:pointer">
+  box.innerHTML = list.map(d => {
+    const v = verifyDataset(prefix, d);
+    const badge = v.badge
+      ? `<span class="fieldcheck fc-${v.level}" title="${esc(v.detail).replace(/"/g, '&quot;')}">${esc(v.badge)}</span>`
+      : '';
+    return `<label class="pick" style="cursor:pointer">
       <input type="checkbox" class="${prefix}-ds" data-id="${esc(d.id)}" ${state.has(d.id) ? 'checked' : ''} style="margin-top:3px">
-      <div class="pi"><div class="pn">${esc(d.name)}</div>
+      <div class="pi"><div class="pn">${esc(d.name)} ${badge}</div>
       <div class="ps"><span class="tag">${esc(d.lab || '未标注')}</span><span class="tag o">${esc(d.table_type || '未标注')}</span>
       ${(d.sheets || []).length} 个工作表 · ${Number(d.total_rows || 0).toLocaleString()} 行</div></div>
-    </label>`).join('');
+    </label>`;
+  }).join('');
 }
 function renderAnDatasets() {
   renderAnalysisDatasets('tat', S.tatDs, 'TAT');
   renderAnalysisDatasets('rp', S.rpDs, '设备负载');
+  refreshReqPanels();
 }
 function setupAnalysisDsControls(prefix, state) {
   const kw = $('#' + prefix + '-ds-kw'); if (kw) kw.oninput = () => renderAnalysisDatasets(prefix, state, prefix);
@@ -2665,6 +2920,8 @@ function setupAnalysisDsControls(prefix, state) {
   if (box) box.onchange = e => {
     const cb = e.target.closest('.' + prefix + '-ds'); if (!cb) return;
     if (cb.checked) state.add(cb.dataset.id); else state.delete(cb.dataset.id);
+    // 勾选变化后「需要字段」清单要立刻跟着变（✓/✕ + 命中列名）
+    renderReqPanel(prefix);
   };
 }
 function setupAnDsControls() {
@@ -2711,36 +2968,46 @@ async function ensureAnalysisResult(prefix, force) {
 async function ensureTatResultFromSelection(force) { return ensureAnalysisResult('tat', force); }
 async function ensureReportResultFromSelection(force) { return ensureAnalysisResult('rp', force); }
 
-/* 快捷场景：键 → [开始列关键词(按序匹配), 结束列关键词]。点按钮自动选列并计算 */
-const TAT_PRESETS = {
-  cj:   { label: '采集-签收', start: ['采集时间', '采样时间', '采集'], end: ['签收时间', '接收时间', '签收'] },
-  qs:   { label: '签收-核收', start: ['签收时间', '接收时间', '签收'], end: ['核收时间', '核收'] },
-  hbg:  { label: '核收-报告', start: ['核收时间', '核收'], end: ['检测完成时间', '报告时间', '报告'] },
-  bgsh: { label: '报告-审核', start: ['检测完成时间', '报告时间', '报告'], end: ['审核时间', '审核'] },
-};
-function tatPresetRun(key) {
-  const p = TAT_PRESETS[key]; if (!p) return;
-  const s = $('#tat-start'), e = $('#tat-end');
-  const tl = Array.from(s.options).map(o => o.value);
-  const find = (kws) => { for (const k of kws) { const hit = tl.find(c => c.includes(k)); if (hit) return hit; } return ''; };
-  const sc = find(p.start), ec = find(p.end);
-  if (!sc || !ec || sc === ec) {
-    return toast(`「${p.label}」需要的时间列不全（${p.start[0]} / ${p.end[0]}），请检查数据或手动选择`, 'err');
+/* ★ TAT 口径（梦云 2026-10-19 定）：
+     TAT   = 审核时间 − 签收时间
+     ToTAT = 审核时间 − 采样时间（无采样列则退回采集时间）
+   两个指标共用终点，ToTAT 的起点由后端自动挑，无需用户手动指定。
+   ★ v2.4.1：环节列（采集/签收/核收/报告/审核）改由**后端统一识别**
+     （关键词表只在后端一份），前端只显示"本次计算用到的字段"。 */
+/* ★ TAT 分析：按列名预选默认口径（签收 → 审核），用户可自行调整 */
+const TAT_STAGES = [
+  { key: '采集', label: '采集' },
+  { key: '签收', label: '签收' },
+  { key: '核收', label: '核收' },
+  { key: '报告', label: '报告' },
+  { key: '审核', label: '审核' },
+];
+let tatDetect = null;      // 后端识别到的环节列 {环节: 列名}
+let tatStageOverride = {};  // 用户手工指定的环节列
+let tatStandards = null;    // 实验室 TAT 标准
+let tatStart = '';          // 主指标起点列
+let tatEnd = '';            // 主指标终点列
+let tatCols = [];           // 当前 TAT 结果表的列名
+
+/* ★ 拉取后端识别到的环节列（关键词表只在后端一份，前端不再重复定义） */
+async function tatLoadDetect(resultId) {
+  if (!resultId) return null;
+  try {
+    const d = await api('/api/tat/detect', { result_id: resultId });
+    d.__for = (tatCols || []).join('|');
+    return d;
+  } catch (e) {
+    return null;
   }
-  s.value = sc; e.value = ec;
-  $$('#tat-presets .btn').forEach(b => b.classList.toggle('on', b.dataset.pre === key));
-  tatRun();
 }
 
-/* ★ TAT 分析：对当前结果计算 结束时间−开始时间 的时长统计（只读） */
 function tatFill(cols) {
-  const s = $('#tat-start'), e = $('#tat-end'), g = $('#tat-group');
-  if (!s || !e) return;
+  const g = $('#tat-group');
+  if (!g) return;
   const list = cols || [];
+  tatCols = list;
   const opt = list.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  s.innerHTML = opt; e.innerHTML = opt;
   g.innerHTML = '<option value="">不分组</option>' + opt;
-  // 只在"时间/日期"类列里猜，避免把"××申请模式"之类的文本列选进来
   const tl = list.filter(c => /时间|日期/.test(c));
   const pick = (kws, not) => {
     for (const k of kws) {
@@ -2749,53 +3016,127 @@ function tatFill(cols) {
     }
     return '';
   };
-  const endC = pick(['检测完成', '报告', '审核', '复查完成', '完成'], ['失效']);
-  const startC = pick(['采样', '接收', '采集', '签收', '上机', '申请'], ['完成', '失效', '审核', '报告']);
-  s.value = startC || (tl[0] || ''); e.value = endC || (tl[tl.length - 1] || '');
+  // 默认给业务口径：签收时间 → 审核时间
+  const startC = pick(['签收', '接收', '收样'], ['完成', '失效', '审核', '报告']);
+  const endC = pick(['审核', '报告审核'], ['失效']) || pick(['审核', '报告']);
   if (list.includes('模块')) g.value = '模块';
+  // 起止列不再给用户直接选：自动识别环节后只显示"实际用到的字段"
+  tatStart = startC || (tl[0] || '');
+  tatEnd = endC || pick(['检测完成', '报告', '完成']) || (tl[tl.length - 1] || '');
+  if (tatDetect && tatDetect.__for !== list.join('|')) {
+    // 结果表换了 → 旧的环节识别/手工指定作废
+    tatDetect = null;
+    tatStageOverride = {};
+  }
+  renderTatFields();
+  renderTatAdjust();
   const tip = $('#tat-tip');
   if (tip) tip.textContent = list.length
-    ? '周转时间 = 结束时间 − 开始时间；已按列名预选，可自行调整。'
+    ? 'TAT = 审核时间 − 签收时间；ToTAT = 审核时间 − 采样时间（无采样列则取采集时间）。已自动识别各环节对应的列。'
     : '暂无分析结果：可先在上方生成，或从「结果分析」下拉选择历史结果。';
 }
+
+/* 只显示"本次计算用到的字段"：采集 → 签收 → 核收 → 报告 → 审核 */
+function renderTatFields() {
+  const box = $('#tat-fields');
+  if (!box) return;
+  const stages = tatEffectiveStages();
+  if (!stages || !Object.keys(stages).length) {
+    box.innerHTML = '<span class="tip">尚未识别到环节列（生成 TAT 数据后自动识别）</span>';
+    return;
+  }
+  const parts = [];
+  TAT_STAGES.forEach(st => {
+    const col = stages[st.key];
+    if (col) {
+      parts.push(`<span class="tat-fchip"><b>${esc(st.label)}</b>${esc(col)}</span>`);
+    } else {
+      parts.push(`<span class="tat-fchip miss"><b>${esc(st.label)}</b>未找到</span>`);
+    }
+  });
+  box.innerHTML = parts.join('<span class="tat-farrow">→</span>');
+}
+
+/* 「调整字段」面板：手工指定各环节用哪一列 */
+function renderTatAdjust() {
+  const box = $('#tat-adjust-grid');
+  if (!box) return;
+  const list = tatCols || [];
+  const opt = (sel) => '<option value="">（不参与计算）</option>'
+    + list.map(c => `<option value="${esc(c)}"${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  const stages = tatEffectiveStages();
+  box.innerHTML = TAT_STAGES.map(st => {
+    const cur = (tatStageOverride[st.key] !== undefined) ? tatStageOverride[st.key] : (stages[st.key] || '');
+    return `<label class="tat-adj-item"><span>${esc(st.label)}</span>`
+      + `<select class="sel" data-stage="${esc(st.key)}">${opt(cur)}</select></label>`;
+  }).join('');
+  $$('#tat-adjust-grid select').forEach(sel => {
+    sel.onchange = () => {
+      tatStageOverride[sel.dataset.stage] = sel.value;
+      renderTatFields();
+    };
+  });
+}
+
+function tatEffectiveStages() {
+  const out = {};
+  const base = (tatDetect && tatDetect.stages) || {};
+  TAT_STAGES.forEach(st => {
+    const ov = tatStageOverride[st.key];
+    if (ov !== undefined && ov !== null) {
+      if (ov) out[st.key] = ov;
+    } else if (base[st.key]) {
+      out[st.key] = base[st.key];
+    }
+  });
+  return out;
+}
+
 function tatFmt(h) {
   if (h === null || h === undefined) return '—';
   return h < 48 ? h.toFixed(1) + ' 小时' : (h / 24).toFixed(1) + ' 天';
 }
-/* ★ TAT 结果导出：KPI / 时长分布 / 分组统计 三段 CSV（浏览器本地生成，不动数据） */
+/* ★ TAT 结果导出：TAT / ToTAT 两套 KPI + 分布 + 分组（浏览器本地生成，不动数据） */
 function tatExport() {
   const r = S.tatLast;
   if (!r || !r.stats) return toast('还没有可导出的 TAT 结果，请先计算', 'err');
-  const st = r.stats;
   const rows = [];
-  rows.push(['TAT 分析', `${r.end} − ${r.start}${r.group ? '（按 ' + r.group + ' 分组）' : ''}`]);
-  rows.push([]);
-  rows.push(['指标', '数值']);
-  rows.push(['有效样本', st.valid]);
-  rows.push(['无法解析/负值', st.invalid]);
-  rows.push(['平均 TAT（小时）', st.avg_h]);
-  rows.push(['中位数（小时）', st.median_h]);
-  rows.push(['P90（小时）', st.p90_h]);
-  rows.push(['最短（小时）', st.min_h]);
-  rows.push(['最长（小时）', st.max_h]);
-  rows.push([]);
-  rows.push(['时长分布', '样本数', '占比(%)']);
-  (r.dist || []).forEach(d => rows.push([d.label, d.count, d.pct]));
-  if (r.groups && r.groups.length) {
+  const seg = (m, tag, formula) => {
+    if (!m) return;
+    const st = m.stats;
+    rows.push([tag, formula]);
+    rows.push(['', '']);
+    rows.push(['有效样本', st.valid]);
+    rows.push(['无法解析/负值', st.invalid]);
+    rows.push(['平均（小时）', st.avg_h]);
+    rows.push(['中位数（小时）', st.median_h]);
+    rows.push(['P90（小时）', st.p90_h]);
+    rows.push(['最短（小时）', st.min_h]);
+    rows.push(['最长（小时）', st.max_h]);
     rows.push([]);
-    rows.push([`按 ${r.group} 分组`, '样本数', '平均(小时)', '中位数(小时)', 'P90(小时)', '最长(小时)']);
-    r.groups.forEach(g => rows.push([g.name, g.n, g.avg_h, g.median_h, g.p90_h, g.max_h]));
-  }
+    rows.push(['时长分布', '样本数', '占比(%)']);
+    (m.dist || []).forEach(d => rows.push([d.label, d.count, d.pct]));
+    if (m.groups && m.groups.length) {
+      rows.push([]);
+      rows.push(['按分组', '样本数', '平均(小时)', '中位数(小时)', 'P90(小时)', '最长(小时)']);
+      m.groups.forEach(g => rows.push([g.name, g.n, g.avg_h, g.median_h, g.p90_h, g.max_h]));
+    }
+    rows.push(['', '']);
+  };
+  seg(r, 'TAT', `${r.end} − ${r.start}`);
+  seg(r.tot, 'ToTAT', r.tot ? `${r.tot.end} − ${r.tot.start}` : (r.tot_note || '不可算'));
+  if (r.group) rows.push(['', `分组列：${r.group}`]);
+
   const csv = '\ufeff' + rows.map(row => row.map(c => {
-    const s = String(c === null || c === undefined ? '' : c);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    const t = String(c === null || c === undefined ? '' : c);
+    return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
   }).join(',')).join('\r\n');
   const a = document.createElement('a');
   const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `TAT分析_${r.start}_${r.end}_${stamp}.csv`.replace(/[\\/:*?"<>|]/g, '_');
+  a.download = `TAT与ToTAT分析_${r.end}_${stamp}.csv`.replace(/[\\/:*?"<>|]/g, '_');
   document.body.appendChild(a); a.click(); a.remove();
-  toast('TAT 分析已导出为 CSV', 'ok');
+  toast('TAT / ToTAT 分析已导出为 CSV', 'ok');
 }
 /* ★ TAT 清除：收起结果、恢复默认提示（不动数据与结果池） */
 function tatClear() {
@@ -2803,9 +3144,8 @@ function tatClear() {
   S.tatResult = null;
   $('#tat-body').innerHTML = '';
   $('#tat-badge').textContent = '—';
-  $$('#tat-presets .btn').forEach(b => b.classList.remove('on'));
   const tip = $('#tat-tip');
-  if (tip) tip.textContent = '周转时间 = 结束时间 − 开始时间；用于查看检测流程各环节耗时分布。';
+  if (tip) tip.textContent = 'TAT = 审核时间 − 签收时间；ToTAT = 审核时间 − 采样时间（无采样列则取采集时间）。';
   toast('已清除 TAT 分析结果', 'ok');
 }
 async function tatRun() {
@@ -2814,39 +3154,234 @@ async function tatRun() {
     if (!ok) return toast('请先在 TAT 分析中勾选数据表并点击「生成 TAT 数据」', 'err');
   }
   const rid = S.tatResult && S.tatResult.id;
-  const start = $('#tat-start').value, end = $('#tat-end').value, group = $('#tat-group').value;
+  const group = $('#tat-group').value;
   const btn = $('#tat-run'); btn.disabled = true; btn.textContent = '计算中…';
   try {
-    const r = await api('/api/tat', { result_id: rid, start, end, group });
-    S.tatLast = r;            // 存起来供「导出」使用
-    const st = r.stats || {};
-    $('#tat-badge').textContent = st.valid ? `${Number(st.valid).toLocaleString()} 例` : '无有效数据';
+    // 先让后端识别环节列（关键词表只在后端一份）
+    if (!tatDetect || tatDetect.__for !== (tatCols || []).join('|')) {
+      tatDetect = await tatLoadDetect(rid);
+      renderTatFields(); renderTatAdjust();
+    }
+    const stages = tatEffectiveStages();
+    const useStd = tatStandards && tatHasLimit();
+    const r = await api('/api/tat', {
+      result_id: rid, start: tatStart, end: tatEnd, group,
+      stages: stages, use_standard: !!useStd,
+    });
+    S.tatLast = r;
     const kpi = (l, v) => `<div class="kpi"><div class="kv">${esc(v)}</div><div class="kl">${esc(l)}</div></div>`;
-    let html = '<div class="cards">'
-      + kpi('有效样本', Number(st.valid || 0).toLocaleString())
-      + kpi('平均 TAT', tatFmt(st.avg_h))
-      + kpi('中位数', tatFmt(st.median_h))
-      + kpi('P90', tatFmt(st.p90_h))
-      + kpi('最长', tatFmt(st.max_h))
-      + '</div>';
-    if (r.dist && r.dist.length) {
-      const mx = Math.max(...r.dist.map(d => d.count), 1);
-      html += '<h2>时长分布</h2><div class="bars">' + r.dist.map(d =>
-        `<div class="bar"><span class="bn">${esc(d.label)}</span><span class="bt"><i class="bf" style="display:block;height:100%;width:${Math.round(d.count * 100 / mx)}%"></i></span><span class="bv">${d.count}（${d.pct}%）</span></div>`).join('') + '</div>';
+
+    // 单个指标区块：KPI + 分布 + 分组
+    const block = (m, tag, title, formula, accent) => {
+      if (!m) return '';
+      const st = m.stats || {};
+      let h = `<div class="tat-block${accent}">
+        <div class="tat-h"><span class="tat-tag">${esc(tag)}</span>
+          <span class="tat-f">${esc(formula)}</span></div>
+        <div class="cards">
+          ${kpi('有效样本', Number(st.valid || 0).toLocaleString())}
+          ${kpi('平均', tatFmt(st.avg_h))}
+          ${kpi('中位数', tatFmt(st.median_h))}
+          ${kpi('P90', tatFmt(st.p90_h))}
+          ${kpi('最长', tatFmt(st.max_h))}
+        </div>`;
+      if (m.dist && m.dist.length) {
+        const mx = Math.max(...m.dist.map(d => d.count), 1);
+        h += '<div class="bars">' + m.dist.map(d =>
+          `<div class="bar"><span class="bn">${esc(d.label)}</span><span class="bt"><i class="bf" style="display:block;height:100%;width:${Math.round(d.count * 100 / mx)}%"></i></span><span class="bv">${d.count}（${d.pct}%）</span></div>`).join('') + '</div>';
+      }
+      if (m.groups && m.groups.length > 1) {
+        h += '<div class="tablewrap"><table class="grid"><thead><tr>'
+          + '<th>按 ' + esc(m.group || (r.group || '')) + ' 分组</th><th>样本数</th><th>平均</th><th>中位数</th><th>P90</th><th>最长</th></tr></thead><tbody>'
+          + m.groups.map(g2 => `<tr><td><b>${esc(g2.name)}</b></td><td>${Number(g2.n).toLocaleString()}</td><td>${tatFmt(g2.avg_h)}</td><td>${tatFmt(g2.median_h)}</td><td>${tatFmt(g2.p90_h)}</td><td>${tatFmt(g2.max_h)}</td></tr>`).join('')
+          + '</tbody></table></div>';
+      }
+      if (st.invalid) h += `<div class="tip" style="margin-top:6px">另有 ${Number(st.invalid).toLocaleString()} 行时间无法解析或为负值，已跳过。</div>`;
+      if (m.note) h += `<div class="tip" style="margin:4px 0 0">${esc(m.note)}</div>`;
+      return h + '</div>';
+    };
+
+    let html = '';
+
+    // ---- 四个分段（采集-签收 / 签收-核收 / 核收-报告 / 报告-审核）----
+    if (r.segments && r.segments.length) {
+      const segs = r.segments.map(s => {
+        const st = s.stats || {};
+        return `<div class="tat-seg">
+          <div class="tat-seg-h"><b>${esc(s.name)}</b><span>${esc(s.start)} → ${esc(s.end)}</span></div>
+          <div class="cards">
+            ${kpi('样本', Number(st.valid || 0).toLocaleString())}
+            ${kpi('平均', tatFmt(st.avg_h))}
+            ${kpi('中位数', tatFmt(st.median_h))}
+            ${kpi('P90', tatFmt(st.p90_h))}
+          </div>
+          ${s.weak ? `<div class="tip" style="margin-top:6px;color:#b93a3a">${esc(s.weak)}</div>` : ''}
+        </div>`;
+      }).join('');
+      html += `<div class="tat-block tat-seg-block">
+        <div class="tat-h"><span class="tat-tag">分段</span>
+          <span class="tat-f">把一条标本拆成四段，看时间花在哪一段</span></div>
+        <div class="tat-segs">${segs}</div></div>`;
     }
-    if (r.groups && r.groups.length > 1) {
-      html += '<h2>按 ' + esc(r.group) + ' 分组</h2><div class="tablewrap"><table class="grid"><thead><tr>'
-        + '<th>分组</th><th>样本数</th><th>平均</th><th>中位数</th><th>P90</th><th>最长</th></tr></thead><tbody>'
-        + r.groups.map(g2 => `<tr><td><b>${esc(g2.name)}</b></td><td>${Number(g2.n).toLocaleString()}</td><td>${tatFmt(g2.avg_h)}</td><td>${tatFmt(g2.median_h)}</td><td>${tatFmt(g2.p90_h)}</td><td>${tatFmt(g2.max_h)}</td></tr>`).join('')
-        + '</tbody></table></div>';
+
+    // ---- 实验室内 TAT（签收 → 审核）----
+    if (r.lab_tat) {
+      html += block(r.lab_tat, '实验室内 TAT', '实验室内周转',
+        `${r.lab_tat.start} → ${r.lab_tat.end}`, ' tat-main');
+    } else {
+      html += block(r, 'TAT', 'TAT（实验室内周转）',
+        `${r.start} − ${r.end}`, ' tat-main');
     }
-    if (st.invalid) html += `<div class="tip" style="margin-top:8px">另有 ${Number(st.invalid).toLocaleString()} 行时间无法解析或为负值，已跳过。</div>`;
+
+    // ---- ToTAT（采样 → 审核）----
+    if (r.tot) {
+      html += block(r.tot, 'ToTAT', 'ToTAT（含采样到送达）',
+        `${r.tot.start} − ${r.tot.end}`, ' tat-tot');
+    } else if (r.tot_note) {
+      html += `<div class="tat-block tat-tot tat-none"><div class="tat-h"><span class="tat-tag">ToTAT</span>
+        <span class="tat-f">${esc(r.tot_note)}</span></div></div>`;
+    }
+
+    // ---- 超标判定（专业 × 平诊/急诊）----
+    if (r.standard && !r.standard.error) {
+      html += tatStandardHTML(r.standard);
+    } else if (r.standard && r.standard.error) {
+      html += `<div class="tip" style="margin-top:10px">标准判定未执行：${esc(r.standard.error)}</div>`;
+    } else if (!tatHasLimit()) {
+      // 还没设标准：给个明确的入口，别让用户以为"判定功能坏了"
+      html += `<div class="tat-block tat-std-block">
+        <div class="tat-h"><span class="tat-tag">标准判定</span>
+          <span class="tat-f">按「专业 × 平诊/急诊」对照实验室规定</span></div>
+        <div class="tip">还没有设置 TAT 标准。点右上角<b>「TAT 标准」</b>，按生化 / 免疫 / 血常规 / 凝血分别设定平诊与急诊的规定（小时），
+          设定后重新点「计算」，这里就会给出每个专业的超标数与超标率。</div></div>`;
+    }
+
+    $('#tat-badge').textContent = (r.stats && r.stats.valid)
+      ? Number(r.stats.valid).toLocaleString() + ' 例' : '无有效数据';
     $('#tat-body').innerHTML = html;
   } catch (err) {
     toast('TAT 计算失败：' + err.message, 'err');
   } finally {
     btn.disabled = false; btn.textContent = '计算';
   }
+}
+
+/* ---------------- 实验室 TAT 标准 ---------------- */
+function tatHasLimit() {
+  if (!tatStandards || !tatStandards.limits) return false;
+  return Object.keys(tatStandards.limits).some(spec =>
+    (tatStandards.limits[spec]['平诊'] !== null && tatStandards.limits[spec]['平诊'] !== undefined)
+    || (tatStandards.limits[spec]['急诊'] !== null && tatStandards.limits[spec]['急诊'] !== undefined));
+}
+async function tatLoadStandards() {
+  try {
+    const r = await api('/api/tat/standards', {});
+    tatStandards = r.standards || r;
+    return tatStandards;
+  } catch (e) {
+    return null;
+  }
+}
+function tatRenderStandardRows() {
+  const body = $('#tat-std-rows');
+  if (!body) return;
+  const specs = (tatStandards && tatStandards.specialties) || ['生化', '免疫', '血常规', '凝血'];
+  const limits = (tatStandards && tatStandards.limits) || {};
+  body.innerHTML = specs.map(spec => {
+    const item = limits[spec] || {};
+    const pd = item['平诊'], ed = item['急诊'];
+    return `<tr><td><b>${esc(spec)}</b></td>
+      <td><input class="tat-std-in" type="number" step="0.5" min="0" data-spec="${esc(spec)}" data-urg="平诊"
+             value="${pd === null || pd === undefined ? '' : esc(pd)}" placeholder="未设"></td>
+      <td><input class="tat-std-in" type="number" step="0.5" min="0" data-spec="${esc(spec)}" data-urg="急诊"
+             value="${ed === null || ed === undefined ? '' : esc(ed)}" placeholder="未设"></td></tr>`;
+  }).join('');
+  const tgt = $('#tat-std-target');
+  if (tgt && tatStandards && tatStandards.target) tgt.value = tatStandards.target;
+  const tip = $('#tat-std-tip');
+  if (tip) tip.textContent = (tatStandards && tatStandards.updated_at)
+    ? '上次保存：' + tatStandards.updated_at : '';
+}
+async function tatOpenStandards() {
+  await tatLoadStandards();
+  tatRenderStandardRows();
+  const m = $('#tat-std-modal');
+  if (m) m.classList.add('show');
+}
+/* 恢复默认：按出厂口径（生化 4/2、免疫 4/2、血常规 0.5/0.25、凝血 2/1）
+   填进表格，点「保存标准」才生效 —— 默认值由后端给，前端不硬编码 */
+function tatFillDefaultStandards() {
+  const defaults = (tatStandards && tatStandards.defaults) || null;
+  if (!defaults) {
+    toast('没取到默认值，关掉弹窗重开再试', 'err');
+    return;
+  }
+  $$('.tat-std-in').forEach(inp => {
+    const v = (defaults[inp.dataset.spec] || {})[inp.dataset.urg];
+    inp.value = (v === null || v === undefined) ? '' : v;
+  });
+  const tgt = $('#tat-std-target');
+  if (tgt) tgt.value = 'lab_tat';
+  const tip = $('#tat-std-tip');
+  if (tip) tip.textContent = '已填入出厂默认值，点「保存标准」生效';
+}
+async function tatSaveStandards() {
+  const limits = {};
+  $$('.tat-std-in').forEach(inp => {
+    const spec = inp.dataset.spec, urg = inp.dataset.urg;
+    if (!limits[spec]) limits[spec] = {};
+    const v = inp.value.trim();
+    limits[spec][urg] = v === '' ? null : Number(v);
+  });
+  const target = ($('#tat-std-target') || {}).value || 'lab_tat';
+  try {
+    const r = await api('/api/tat/standards', { save: true, limits: limits, target: target });
+    tatStandards = r.standards || r;
+    tatRenderStandardRows();
+    toast('TAT 标准已保存，重新点「计算」即可看到超标判定', 'ok');
+    if (tatHasLimit()) tatRun();
+  } catch (e) {
+    toast('保存失败：' + e.message, 'err');
+  }
+}
+
+/* 超标判定结果表：专业 × 平诊/急诊 */
+function tatStandardHTML(sd) {
+  const sum = sd.summary || {};
+  const targetName = sd.target === 'tot' ? 'ToTAT（采样→审核）' : '实验室内 TAT（签收→审核）';
+  let h = `<div class="tat-block tat-std-block">
+    <div class="tat-h"><span class="tat-tag">标准判定</span>
+      <span class="tat-f">按「专业 × 平诊/急诊」对照实验室规定 · 判定对象：${esc(targetName)}</span></div>`;
+  if (!sum.judged) {
+    h += `<div class="tip">还没有设置任何 TAT 标准 —— 点右上角「TAT 标准」按专业与平诊/急诊设定后，这里会给出超标数与超标率。</div>`;
+    h += '</div>';
+    return h;
+  }
+  h += `<div class="cards">
+      <div class="kpi"><div class="kv">${Number(sum.over).toLocaleString()}</div><div class="kl">超标例数</div></div>
+      <div class="kpi"><div class="kv">${sum.over_pct === null || sum.over_pct === undefined ? '—' : sum.over_pct + '%'}</div><div class="kl">超标率</div></div>
+      <div class="kpi"><div class="kv">${Number(sum.judged).toLocaleString()}</div><div class="kl">参与判定</div></div>
+    </div>`;
+  h += '<div class="tablewrap"><table class="grid"><thead><tr>'
+    + '<th>专业</th><th>分诊</th><th>规定</th><th>样本数</th><th>平均</th><th>中位数</th><th>P90</th><th>超标</th><th>超标率</th>'
+    + '</tr></thead><tbody>';
+  (sd.groups || []).forEach(g => {
+    if (!g.n) return;
+    const limit = g.limit_h === null || g.limit_h === undefined ? '未设' : g.limit_h + ' 小时';
+    h += `<tr><td><b>${esc(g.specialty)}</b></td><td>${esc(g.urgency)}</td>`
+      + `<td>${esc(limit)}</td><td>${Number(g.n).toLocaleString()}</td>`
+      + `<td>${tatFmt(g.avg_h)}</td><td>${tatFmt(g.median_h)}</td><td>${tatFmt(g.p90_h)}</td>`
+      + `<td>${g.limit_h === null || g.limit_h === undefined ? '—' : Number(g.over).toLocaleString()}</td>`
+      + `<td>${g.over_pct === null || g.over_pct === undefined ? '—' : g.over_pct + '%'}</td></tr>`;
+  });
+  h += '</tbody></table></div>';
+  if (sd.other && sd.other.length) {
+    h += `<div class="tip" style="margin-top:6px">另有 ${sd.other.length} 个分组没归到四个专业里（未判定）：`
+      + sd.other.slice(0, 6).map(x => esc(x.specialty) + '/' + esc(x.urgency) + ' ' + Number(x.n).toLocaleString() + ' 例').join('、')
+      + (sd.other.length > 6 ? ' 等' : '') + '</div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 /* 「结果分析」面板已从页面移除；下面这组函数保留为无操作占位，
@@ -3527,6 +4062,8 @@ $('#btn-clear-all').onclick = () => {
 };
 
 /* ---------------- 导航 ---------------- */
+// 先把被隐藏的板块摘掉，再初始化菜单（拖动排序读的就是这里的 DOM）
+applyHiddenPages();
 /* ★ 切到「汇总提取」时先静默同步一次后端数据，再渲染。
    原因：renderBuild() 只重绘**内存里已有的 S.datasets**，不会重新拉取。
    若导入动作发生在别处（另一个标签页 / 钉钉扫描 / 后台任务），
@@ -3534,6 +4071,8 @@ $('#btn-clear-all').onclick = () => {
    现在每次进入本页都自动对齐一次；失败也不阻断导航（按旧数据渲染）。 */
 let __buildSyncSeq = 0;
 function nav(p) {
+  // 被隐藏的板块不接受切换（菜单已摘掉，这里再兜一层，防止别处代码或历史逻辑切进去）
+  if (HIDDEN_PAGES.has(p)) return;
   // 原生工作台发生页面切换时，通知外层收起 LIS 覆盖层，避免遮住目标模块。
   window.parent.postMessage({ type: 'smartlabhub:navigate' }, '*');
   $$('.nav a').forEach(a => a.classList.toggle('active', a.dataset.page === p));
@@ -3580,6 +4119,126 @@ $$('.nav a').forEach(a => {
     a.onclick = () => nav(a.dataset.page);
   }
 });
+
+/* ---------------- 左侧菜单自定义顺序 ----------------
+   点「☰ 自定义顺序」进入拖拽模式，拖动条目排列，点「完成」保存。
+   顺序存localStorage，只影响这台电脑这个浏览器，换设备仍是默认序。
+
+   实现要点：用 HTML5 draggable + dragover 计算落点，
+   比监听mousedown/mousemove 简单可靠，拖起来也顺。
+   dragover 里 preventDefault 是让 drop 生效的关键，必须有。 */
+(function navSort() {
+  const nav = $('#nav');
+  if (!nav) return;
+  const startBtn = $('#nav-sort-start');
+  const bar = $('#nav-sortbar');
+  const doneBtn = $('#nav-sort-done');
+  const resetBtn = $('#nav-sort-reset');
+  const KEY = 'slh_nav_order_v1';
+  const DEFAULT_ORDER = ['home', 'sources', 'fields', 'build',
+    'analysis', 'lis', 'ai', 'settings', 'help'];
+
+  const items = () => $$('.nav a[data-key]');
+
+  // 读已保存顺序
+  function savedOrder() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return null;
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : null;
+    } catch (e) { return null; }
+  }
+
+  function applyOrder(order) {
+    if (!order) return;
+    const map = new Map(items().map(a => [a.dataset.key, a]));
+    const used = new Set();
+    order.forEach(k => {
+      const el = map.get(k);
+      if (el && !used.has(k)) { nav.appendChild(el); used.add(k); }
+    });
+    // 表里新增、但没出现在保存顺序里的条目，按原 DOM 顺序补到末尾
+    items().forEach(el => { if (!used.has(el.dataset.key)) nav.appendChild(el); });
+  }
+
+  function saveOrder() {
+    const arr = items().map(a => a.dataset.key);
+    try { localStorage.setItem(KEY, JSON.stringify(arr)); } catch (e) { /* 隐私模式忽略 */ }
+  }
+
+  // 首次进入：套用保存的顺序
+  applyOrder(savedOrder());
+
+  let dragging = null;
+
+  function enterMode(on) {
+    nav.classList.toggle('sorting', on);
+    // 排序栏的显隐交给 CSS（.nav.sorting .nav-sortbar{display:flex}），
+    // 这里别再动 style.display，否则和样式表打架。
+    if (startBtn) startBtn.classList.toggle('on', on);
+    items().forEach(a => { a.draggable = on; });
+    // 排序模式下屏蔽点击跳页：此时点条目应该是"拿起"，不是"切页"
+    items().forEach(a => {
+      if (on) {
+        a.onclick = e => { e.preventDefault(); e.stopPropagation(); };
+      } else {
+        // 退出时把正常跳转行为装回去（与页面的初始绑定保持一致）
+        a.onclick = null;
+        if (a.dataset.action === 'lis-organizer') {
+          a.onclick = event => {
+            event.preventDefault();
+            $$('.nav a').forEach(item => item.classList.toggle('active', item === a));
+            window.parent.postMessage({ type: 'smartlabhub:open-lis-organizer' }, '*');
+          };
+        } else if (a.dataset.page) {
+          a.onclick = () => nav(a.dataset.page);
+        }
+      }
+    });
+  }
+
+  if (startBtn) startBtn.onclick = () => enterMode(true);
+  if (doneBtn) doneBtn.onclick = () => { saveOrder(); enterMode(false); toast('菜单顺序已保存', 'ok'); };
+  if (resetBtn) resetBtn.onclick = () => {
+    try { localStorage.removeItem(KEY); } catch (e) { /* 忽略 */ }
+    // 先复原到默认序，再退出
+    const map = new Map(items().map(a => [a.dataset.key, a]));
+    DEFAULT_ORDER.forEach(k => { const el = map.get(k); if (el) nav.appendChild(el); });
+    items().forEach(el => { if (!map.has(el.dataset.key)) nav.appendChild(el); });
+    enterMode(false);
+    toast('已恢复默认顺序', 'ok');
+  };
+
+  nav.addEventListener('dragstart', e => {
+    const a = e.target.closest('.nav a[data-key]');
+    if (!a || !nav.classList.contains('sorting')) return;
+    dragging = a;
+    a.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox 必须 setData 才肯启动拖拽
+    try { e.dataTransfer.setData('text/plain', a.dataset.key); } catch (err) { /* 忽略 */ }
+  });
+
+  nav.addEventListener('dragover', e => {
+    if (!dragging) return;
+    e.preventDefault();          // 没有这句，drop 不会触发
+    e.dataTransfer.dropEffect = 'move';
+    const over = e.target.closest('.nav a[data-key]');
+    if (!over || over === dragging) return;
+    const box = over.getBoundingClientRect();
+    // 光标在上半部分 → 插到它前面；下半部分 → 插到它后面
+    const after = (e.clientY - box.top) > box.height / 2;
+    nav.insertBefore(dragging, after ? over.nextSibling : over);
+  });
+
+  nav.addEventListener('drop', e => { e.preventDefault(); });
+  nav.addEventListener('dragend', () => {
+    if (dragging) dragging.classList.remove('dragging');
+    dragging = null;
+    saveOrder();     // 拖完就存，不用等点"完成"（点完成只是退出模式）
+  });
+})();
 const __parentOrigin = document.referrer ? new URL(document.referrer).origin : '';
 window.addEventListener('message', event => {
   if (!__parentOrigin || event.origin !== __parentOrigin || event.source !== window.parent) return;
@@ -3600,17 +4259,21 @@ setupAnDsControls();
 const __anClear = $('#an-clear'); if (__anClear) __anClear.onclick = () => { clearResult(); };
 const __tatDsRun = $('#tat-ds-run'); if (__tatDsRun) __tatDsRun.onclick = async () => { const ok = await ensureTatResultFromSelection(true); if (!ok) toast('请先勾选至少一个 TAT 数据表', 'err'); };
 const __rpDsRun = $('#rp-ds-run'); if (__rpDsRun) __rpDsRun.onclick = async () => { const ok = await ensureReportResultFromSelection(true); if (!ok) toast('请先勾选至少一个设备负载数据表', 'err'); };
-['#tat-start', '#tat-end'].forEach(sel => { const el = $(sel); if (el) el.onchange = () => $$('#tat-presets .btn').forEach(b => b.classList.remove('on')); });
 const __tatRun = $('#tat-run'); if (__tatRun) __tatRun.onclick = () => tatRun();
 const __tatExport = $('#tat-export'); if (__tatExport) __tatExport.onclick = () => tatExport();
 const __tatClear = $('#tat-clear'); if (__tatClear) __tatClear.onclick = () => tatClear();
-$$('#tat-presets .btn').forEach(b => b.onclick = async () => {
-  if (!(S.tatResult && S.tatResult.id)) {
-    const ok = await ensureTatResultFromSelection();
-    if (!ok) return toast('请先在 TAT 分析中生成数据', 'err');
-  }
-  tatPresetRun(b.dataset.pre);
-});
+const __tatAdjust = $('#tat-adjust'); if (__tatAdjust) __tatAdjust.onclick = () => {
+  const p = $('#tat-adjust-panel');
+  if (!p) return;
+  p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+  if (p.style.display === 'block') renderTatAdjust();
+};
+const __tatStd = $('#tat-std'); if (__tatStd) __tatStd.onclick = () => tatOpenStandards();
+const __tatStdX = $('#tat-std-x'); if (__tatStdX) __tatStdX.onclick = () => {
+  const m = $('#tat-std-modal'); if (m) m.classList.remove('show');
+};
+const __tatStdSave = $('#tat-std-save'); if (__tatStdSave) __tatStdSave.onclick = () => tatSaveStandards();
+const __tatStdDefault = $('#tat-std-default'); if (__tatStdDefault) __tatStdDefault.onclick = () => tatFillDefaultStandards();
 S.rp = rpBlank();          // v2.1.0：分析报告模块状态先建好，防止任何早期点击报 null
 rpReset();                 // 初始收起「分析报告」卡片
 // 自检：页面里每个 btn-* 按钮都必须绑好点击事件。

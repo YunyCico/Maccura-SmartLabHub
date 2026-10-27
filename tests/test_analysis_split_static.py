@@ -74,7 +74,13 @@ def test_lis_sidebar_action_opens_vue_panel_without_fake_native_page():
     js = APP.read_text(encoding="utf-8")
     vue = (ROOT / "home" / "src" / "components" / "DataAnalysis.vue").read_text(encoding="utf-8")
 
-    assert '<a data-action="lis-organizer"><i>▦</i>LIS 数据整理</a>' in html
+    # 别把整个标签串进断言 —— 导航项上还有 data-key（供菜单排序用），
+    # 写死整个标签以后每加一个属性就得改测试。只校验关键行为。
+    assert 'data-action="lis-organizer"' in html
+    assert "LIS 数据整理" in html
+    lis_a = [ln.strip() for ln in html.splitlines() if 'data-action="lis-organizer"' in ln]
+    assert lis_a, "侧栏应有一个 lis-organizer 入口"
+    assert "▦" in lis_a[0]
     assert 'id="page-lis-organizer"' not in html
     assert "event.preventDefault();" in js
     assert "smartlabhub:open-lis-organizer" in js
@@ -90,6 +96,17 @@ def test_lis_sidebar_action_opens_vue_panel_without_fake_native_page():
     assert "返回数据分析" in vue
     assert "closeLisOrganizer" in vue
     assert ":class=\"{ 'is-lis-open': showLisOrganizer }\"" in vue
+
+
+def test_lis_organizer_supports_imported_data_sources():
+    vue = (ROOT / "home" / "src" / "components" / "LisDataOrganizer.vue").read_text(encoding="utf-8")
+    api = (ROOT / "platform" / "backend" / "app" / "api" / "data_analysis.py").read_text(encoding="utf-8")
+    service = (ROOT / "platform" / "backend" / "app" / "services" / "lis_service.py").read_text(encoding="utf-8")
+    for marker in ("/data-analysis/lis/imported-sources", "preview-imported", "selectedSourceId", "读取已导入表"):
+        assert marker in vue or marker in api
+    assert "def imported_sources" in service
+    assert "def preview_imported_dataset" in service
+    assert "Path(engine.SRC_DIR).resolve()" in service
 
 
 def test_analysis_has_independent_selectors_and_run_buttons():

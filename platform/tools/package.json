@@ -1,0 +1,11 @@
+{
+  "name": "smartlabhub-tools",
+  "private": true,
+  "type": "module",
+  "description": "SmartLabHub 本地验证/工具脚本的依赖（不参与前端构建）",
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0"
+  }
+}
