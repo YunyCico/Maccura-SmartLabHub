@@ -139,7 +139,7 @@ a.save-btn{display:inline-block;text-decoration:none;line-height:1.4}
             <div id="updateTime">更新时间：2026/10/20 14:34:40</div>
         </div>
         <button class="import-btn" onclick="loadFromBackend(true)">重新加载平台数据</button>
-        <a class="save-btn" href="api/bi/export.xlsx" download>下载 Excel</a>
+        <a class="save-btn" id="exportXlsxLink" href="api/bi/export.xlsx" download>下载 Excel</a>
         <button class="save-btn" onclick="saveData()" title="将当前最新数据写入 HTML 文件，下次打开即为新数据">保存数据</button>
         <button class="clear-btn" onclick="clearData()" title="清空当前全部数据（含图表与明细），可再重新加载平台数据">清空数据</button>
     </div>
@@ -666,8 +666,30 @@ function applyDataset(payload) {
     return true;
 }
 
+// ======================== 部署前缀 ========================
+// 这个看板有两种运行方式：
+//   1. 独立跑（地址是根）→ 前缀为空
+//   2. 被 SmartLabHub 嵌在 /portal/ 下 → 所有 /api 要加 /portal 前缀
+// 不加前缀的话，fetch('/api/bi/dataset') 会打到平台自己的后端上，
+// 平台没有这个路由 → 拿不到数据 → 看板显示「后端暂无数据」。
+var DEPLOY_BASE = (function () {
+    var path = window.location.pathname || '';   // '/portal/bi-dashboard-template.html'
+    var idx = path.indexOf('/portal');
+    if (idx < 0) return '';
+    var after = path.slice(idx + '/portal'.length);
+    // /portal 后面必须紧跟 '/' 或结束，避免 /portaltest 这种误判
+    if (after !== '' && after.charAt(0) !== '/') return '';
+    return path.slice(0, idx + '/portal'.length);
+})();
+
+/** 给站内绝对路径加上部署前缀。 */
+function withDeployBase(path) {
+    if (!DEPLOY_BASE) return path;
+    return path.charAt(0) === '/' ? DEPLOY_BASE + path : DEPLOY_BASE + '/' + path;
+}
+
 function loadFromBackend(silent) {
-    return fetch('/api/bi/dataset')
+    return fetch(withDeployBase('/api/bi/dataset'))
         .then(function(r) { return r.json(); })
         .then(function(payload) {
             var ok = applyDataset(payload);
@@ -1159,6 +1181,11 @@ window.addEventListener('load', function() {
 document.addEventListener('DOMContentLoaded', function() {
     var t = document.getElementById('toast');
     if (t) t.addEventListener('click', hideToast);
+
+    // 下载 Excel 的链接同样要带部署前缀：
+    // 独立跑时是 /api/bi/export.xlsx，嵌在 /portal/ 下时必须是 /portal/api/bi/export.xlsx
+    var xl = document.getElementById('exportXlsxLink');
+    if (xl) xl.setAttribute('href', withDeployBase('/api/bi/export.xlsx'));
 });
 
 window.addEventListener('resize', function() {
