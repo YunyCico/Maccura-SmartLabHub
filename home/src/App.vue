@@ -13,6 +13,8 @@ const currentTitle = computed(() => (route.meta.title as string) ?? 'SmartLabHub
 const isDataAnalysis = computed(() => route.path === '/data-analysis')
 // 登录页/首次设置页不套外壳（没有顶部用户栏、没有退出入口）
 const isBare = computed(() => Boolean(route.meta.bare))
+// 内嵌整页模块（如服务需求报表）要铺满，不要工作区的左右留白
+const isFullBleed = computed(() => Boolean(route.meta.fullBleed))
 
 const user = computed(() => authState.user)
 const initials = computed(() =>
@@ -87,7 +89,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <main class="workspace">
+    <main class="workspace" :class="{ 'workspace-full': isFullBleed }">
       <header v-if="route.path === '/'" class="topbar">
         <h1>{{ currentTitle }}</h1>
       </header>

@@ -244,6 +244,30 @@ async function main() {
     check('按钮已并入报表工具栏', Boolean(embedButtons.found), (embedButtons.labels || []).join(' / '));
     check('与「连接检测/重新获取」同一行', embedButtons.sameRow === true, `sameRow=${embedButtons.sameRow}`);
 
+    // 布局：四周不该留框（没有外层留白、没有圆角边框，iframe 顶到边）
+    const layout = await page.evalJson(`(function () {
+      var ws = document.querySelector('.workspace');
+      var wrap = document.querySelector('.report-frame-wrap');
+      var f = document.querySelector('iframe.report-frame');
+      var g = function (el) { return el ? getComputedStyle(el) : null; };
+      var wsCs = g(ws), wrapCs = g(wrap);
+      var r = f ? f.getBoundingClientRect() : null;
+      return {
+        workspacePadding: wsCs ? wsCs.padding : '',
+        wrapBorder: wrapCs ? wrapCs.borderTopWidth : '',
+        wrapRadius: wrapCs ? wrapCs.borderTopLeftRadius : '',
+        frameLeft: r ? Math.round(r.left) : -1,
+        frameWidth: r ? Math.round(r.width) : -1,
+        viewportWidth: window.innerWidth,
+      };
+    })()`, await ctx());
+    check('工作区左右留白已取消', layout.workspacePadding === '0px', `padding=${layout.workspacePadding}`);
+    check('报表容器没有边框', parseFloat(layout.wrapBorder) === 0, `border=${layout.wrapBorder}`);
+    check('报表容器没有圆角', parseFloat(layout.wrapRadius) === 0, `radius=${layout.wrapRadius}`);
+    check('报表顶到左边且铺满宽度',
+      layout.frameLeft <= 1 && layout.frameWidth >= layout.viewportWidth - 2,
+      `left=${layout.frameLeft} 宽=${layout.frameWidth} 视口=${layout.viewportWidth}`);
+
     const sdError = await page.evalJson(
       `(function(){ var b=document.querySelector('.report-banner'); return { text: b ? b.textContent.trim() : '' }; })()`,
       await ctx(),

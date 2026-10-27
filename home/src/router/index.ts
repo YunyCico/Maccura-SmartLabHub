@@ -73,7 +73,8 @@ const router = createRouter({
       path: '/service-demand',
       name: 'service-demand',
       component: () => import('../views/ServiceDemandView.vue'),
-      meta: { title: '服务需求报表', code: '05' },
+      // fullBleed：这一页要让内嵌报表铺满整个工作区，不要外层留白和圆角边框
+      meta: { title: '服务需求报表', code: '05', fullBleed: true },
     },
     {
       path: '/account',

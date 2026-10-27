@@ -98,15 +98,15 @@ onMounted(() => {
 .report-page {
   display: flex;
   flex-direction: column;
+  /* 铺满：外层的边距/圆角边框由 .workspace-full 和下面的 wrap 一起取消 */
   height: calc(100vh - clamp(60px, 3vw, 84px));
-  padding: 16px clamp(16px, 2vw, 36px) 24px;
 }
 .report-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 10px;
+  margin: 10px 14px;
   padding: 9px 14px;
   border-radius: 10px;
   background: #fdecec;
@@ -128,8 +128,7 @@ onMounted(() => {
   position: relative;
   flex: 1;
   min-height: 0;
-  border: 1px solid rgba(0, 0, 0, .07);
-  border-radius: 16px;
+  /* 不要边框和圆角：四周留框会在报表外面多出一圈灰边 */
   background: #fff;
   overflow: hidden;
 }
